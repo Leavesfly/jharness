@@ -1,0 +1,160 @@
+package io.leavesfly.jharness.skills;
+
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+
+import java.nio.file.Files;
+import java.nio.file.Path;
+
+import static org.junit.jupiter.api.Assertions.*;
+
+class SkillLoaderTest {
+
+    @TempDir
+    Path tempDir;
+
+    @Test
+    void testParseSkillMarkdownWithFrontmatter() {
+        String content = """
+            ---
+            name: test-skill
+            description: A test skill for unit testing
+            ---
+            
+            # Implementation Details
+            
+            This is the skill content.
+            """;
+
+        String[] result = SkillLoader.parseSkillMarkdown("default", content);
+        assertEquals("test-skill", result[0]);
+        assertEquals("A test skill for unit testing", result[1]);
+        assertTrue(result[2].contains("Implementation Details"));
+    }
+
+    @Test
+    void testParseSkillMarkdownWithHeadings() {
+        String content = """
+            # My Skill Title
+            
+            This is the description paragraph.
+            
+            More content here.
+            """;
+
+        String[] result = SkillLoader.parseSkillMarkdown("default", content);
+        assertEquals("My Skill Title", result[0]);
+        assertEquals("This is the description paragraph.", result[1]);
+    }
+
+    @Test
+    void testParseSkillMarkdownFallbackToDefault() {
+        String content = "No headings or frontmatter here.";
+
+        String[] result = SkillLoader.parseSkillMarkdown("default-name", content);
+        assertEquals("default-name", result[0]);
+    }
+
+    @Test
+    void testLoadSkillRegistryWithBundled() {
+        SkillRegistry registry = SkillLoader.loadSkillRegistry(null);
+        assertNotNull(registry);
+        assertTrue(registry.size() > 0);
+    }
+
+    @Test
+    void testLoadSkillFromUserDirectory() throws Exception {
+        Path userSkillsDir = tempDir.resolve("skills");
+        Files.createDirectories(userSkillsDir);
+        
+        String skillContent = """
+            ---
+            name: user-skill
+            description: User defined skill
+            ---
+            
+            User skill content goes here.
+            """;
+        Files.writeString(userSkillsDir.resolve("user-skill.md"), skillContent);
+
+        SkillRegistry registry = SkillLoader.loadSkillRegistry(userSkillsDir);
+        assertNotNull(registry);
+    }
+
+    @Test
+    void testLoadSkillFromProjectDirectory() throws Exception {
+        Path projectSkillsDir = tempDir.resolve(".jharness").resolve("skills");
+        Files.createDirectories(projectSkillsDir);
+        
+        String skillContent = """
+            # Project Skill
+            
+            Project skill description.
+            """;
+        Files.writeString(projectSkillsDir.resolve("project-skill.md"), skillContent);
+
+        SkillRegistry registry = SkillLoader.loadSkillRegistry(projectSkillsDir);
+        assertNotNull(registry);
+    }
+
+    @Test
+    void testLoadSkillFromMultipleSources() throws Exception {
+        Path userSkillsDir = tempDir.resolve("user-skills");
+        Path projectSkillsDir = tempDir.resolve("project-skills");
+        Files.createDirectories(userSkillsDir);
+        Files.createDirectories(projectSkillsDir);
+
+        // Add user skill
+        Files.writeString(userSkillsDir.resolve("user.md"), """
+            ---
+            name: user-skill
+            description: User skill
+            ---
+            
+            Content
+            """);
+
+        // Add project skill
+        Files.writeString(projectSkillsDir.resolve("project.md"), """
+            ---
+            name: project-skill
+            description: Project skill
+            ---
+            
+            Content
+            """);
+
+        SkillRegistry userRegistry = SkillLoader.loadSkillRegistry(userSkillsDir);
+        SkillRegistry projectRegistry = SkillLoader.loadSkillRegistry(projectSkillsDir);
+        
+        assertNotNull(userRegistry);
+        assertNotNull(projectRegistry);
+    }
+
+    @Test
+    void testEmptyFrontmatterFields() {
+        String content = """
+            ---
+            ---
+            
+            Just content.
+            """;
+
+        String[] result = SkillLoader.parseSkillMarkdown("fallback", content);
+        assertEquals("fallback", result[0]);
+    }
+
+    @Test
+    void testSkillMarkdownWithOnlyName() {
+        String content = """
+            ---
+            name: only-name
+            ---
+            
+            Content without description.
+            """;
+
+        String[] result = SkillLoader.parseSkillMarkdown("default", content);
+        assertEquals("only-name", result[0]);
+    }
+}

@@ -1,0 +1,172 @@
+package io.leavesfly.jharness.services;
+
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+
+import java.nio.file.Path;
+import java.util.List;
+import java.util.Map;
+
+import static org.junit.jupiter.api.Assertions.*;
+
+class CronRegistryTest {
+
+    @TempDir
+    Path tempDir;
+
+    @Test
+    void testUpsertAndListJobs() {
+        CronRegistry registry = new CronRegistry(tempDir);
+
+        Map<String, Object> job1 = Map.of(
+            "name", "job1",
+            "command", "echo hello",
+            "schedule", "daily"
+        );
+        registry.upsertJob(job1);
+
+        Map<String, Object> job2 = Map.of(
+            "name", "job2",
+            "command", "echo world",
+            "schedule", "weekly"
+        );
+        registry.upsertJob(job2);
+
+        List<Map<String, Object>> jobs = registry.listJobs();
+        assertEquals(2, jobs.size());
+    }
+
+    @Test
+    void testGetJob() {
+        CronRegistry registry = new CronRegistry(tempDir);
+
+        Map<String, Object> job = Map.of(
+            "name", "test-job",
+            "command", "ls -la",
+            "schedule", "hourly"
+        );
+        registry.upsertJob(job);
+
+        Map<String, Object> retrieved = registry.getJob("test-job");
+        assertNotNull(retrieved);
+        assertEquals("test-job", retrieved.get("name"));
+        assertEquals("ls -la", retrieved.get("command"));
+    }
+
+    @Test
+    void testDeleteJob() {
+        CronRegistry registry = new CronRegistry(tempDir);
+
+        Map<String, Object> job = Map.of(
+            "name", "to-delete",
+            "command", "echo test",
+            "schedule", "daily"
+        );
+        registry.upsertJob(job);
+
+        assertEquals(1, registry.listJobs().size());
+
+        registry.deleteJob("to-delete");
+        assertEquals(0, registry.listJobs().size());
+        assertNull(registry.getJob("to-delete"));
+    }
+
+    @Test
+    void testUpdateJob() {
+        CronRegistry registry = new CronRegistry(tempDir);
+
+        Map<String, Object> job = Map.of(
+            "name", "update-test",
+            "command", "old-command",
+            "schedule", "daily"
+        );
+        registry.upsertJob(job);
+
+        Map<String, Object> updated = Map.of(
+            "name", "update-test",
+            "command", "new-command",
+            "schedule", "weekly"
+        );
+        registry.upsertJob(updated);
+
+        assertEquals(1, registry.listJobs().size());
+        assertEquals("new-command", registry.getJob("update-test").get("command"));
+    }
+
+    @Test
+    void testMarkExecuted() {
+        CronRegistry registry = new CronRegistry(tempDir);
+
+        Map<String, Object> job = Map.of(
+            "name", "exec-test",
+            "command", "echo test",
+            "schedule", "daily"
+        );
+        registry.upsertJob(job);
+
+        registry.markExecuted("exec-test", java.time.Instant.now());
+
+        Map<String, Object> retrieved = registry.getJob("exec-test");
+        assertNotNull(retrieved.get("last_executed"));
+    }
+
+    @Test
+    void testGetSummary() {
+        CronRegistry registry = new CronRegistry(tempDir);
+
+        registry.upsertJob(Map.of("name", "job1", "command", "cmd1", "schedule", "daily"));
+        registry.upsertJob(Map.of("name", "job2", "command", "cmd2", "schedule", "weekly"));
+
+        String summary = registry.getSummary();
+        assertNotNull(summary);
+        assertTrue(summary.contains("2"));
+    }
+
+    @Test
+    void testJobsSortedByName() {
+        CronRegistry registry = new CronRegistry(tempDir);
+
+        registry.upsertJob(Map.of("name", "charlie", "command", "cmd", "schedule", "daily"));
+        registry.upsertJob(Map.of("name", "alpha", "command", "cmd", "schedule", "daily"));
+        registry.upsertJob(Map.of("name", "bravo", "command", "cmd", "schedule", "daily"));
+
+        List<Map<String, Object>> jobs = registry.listJobs();
+        assertEquals("alpha", jobs.get(0).get("name"));
+        assertEquals("bravo", jobs.get(1).get("name"));
+        assertEquals("charlie", jobs.get(2).get("name"));
+    }
+
+    @Test
+    void testCreatedAtAdded() {
+        CronRegistry registry = new CronRegistry(tempDir);
+
+        Map<String, Object> job = Map.of(
+            "name", "timestamp-test",
+            "command", "echo test",
+            "schedule", "daily"
+        );
+        registry.upsertJob(job);
+
+        Map<String, Object> retrieved = registry.getJob("timestamp-test");
+        assertNotNull(retrieved.get("created_at"));
+    }
+
+    @Test
+    void testEmptyRegistry() {
+        CronRegistry registry = new CronRegistry(tempDir);
+        assertEquals(0, registry.listJobs().size());
+        assertNull(registry.getJob("nonexistent"));
+    }
+
+    @Test
+    void testPersistenceAcrossRestarts() {
+        // Note: Since CronRegistry loads from file on construction,
+        // creating a new instance with same dir should load existing jobs
+        CronRegistry registry1 = new CronRegistry(tempDir);
+        registry1.upsertJob(Map.of("name", "persistent", "command", "echo test", "schedule", "daily"));
+
+        CronRegistry registry2 = new CronRegistry(tempDir);
+        assertEquals(1, registry2.listJobs().size());
+        assertNotNull(registry2.getJob("persistent"));
+    }
+}
