@@ -31,6 +31,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
@@ -58,6 +59,7 @@ public class OpenAiApiClient implements AutoCloseable {
     private final String model;
     private final int maxTokens;
     private final RetryPolicy retryPolicy;
+    private final List<EventSource> activeEventSources = Collections.synchronizedList(new ArrayList<>());
 
     /**
      * 构造 API 客户端
@@ -92,6 +94,13 @@ public class OpenAiApiClient implements AutoCloseable {
      */
     @Override
     public void close() {
+        // 关闭所有活跃的 SSE 连接
+        synchronized (activeEventSources) {
+            for (EventSource es : activeEventSources) {
+                es.cancel();
+            }
+            activeEventSources.clear();
+        }
         httpClient.dispatcher().executorService().shutdown();
         httpClient.connectionPool().evictAll();
         if (httpClient.cache() != null) {
@@ -195,7 +204,8 @@ public class OpenAiApiClient implements AutoCloseable {
                 }
             };
 
-            EventSources.createFactory(httpClient).newEventSource(request, listener);
+            EventSource eventSource = EventSources.createFactory(httpClient).newEventSource(request, listener);
+            activeEventSources.add(eventSource);
 
         } catch (Exception e) {
             future.completeExceptionally(e);
@@ -212,6 +222,9 @@ public class OpenAiApiClient implements AutoCloseable {
                 return new AuthenticationFailureException(message);
             } else if (code == 429) {
                 return new RateLimitFailureException(message);
+            } else if (code >= 400 && code < 500) {
+                // 4xx 客户端错误不应重试，使用 AuthenticationFailureException 标记
+                return new AuthenticationFailureException(message + " (客户端错误，不可重试)");
             }
             return new OpenHarnessApiException(message, code);
         }

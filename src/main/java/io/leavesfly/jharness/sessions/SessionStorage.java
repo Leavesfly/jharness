@@ -12,10 +12,13 @@ import org.slf4j.LoggerFactory;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Stream;
 
 /**
@@ -31,6 +34,7 @@ public class SessionStorage {
             .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
 
     private final Path sessionsDir;
+    private final Map<String, Object> saveLocks = new ConcurrentHashMap<>();
 
     public SessionStorage(Path sessionsDir) {
         this.sessionsDir = sessionsDir;
@@ -45,12 +49,18 @@ public class SessionStorage {
      * 保存会话快照
      */
     public void saveSession(SessionSnapshot snapshot) {
-        try {
-            Path file = sessionsDir.resolve("session-" + snapshot.getSessionId() + ".json");
-            MAPPER.writerWithDefaultPrettyPrinter().writeValue(file.toFile(), snapshot);
-            logger.debug("会话已保存: {}", snapshot.getSessionId());
-        } catch (IOException e) {
-            logger.error("保存会话失败", e);
+        Object lock = saveLocks.computeIfAbsent(snapshot.getSessionId(), k -> new Object());
+        synchronized (lock) {
+            try {
+                Path file = sessionsDir.resolve("session-" + snapshot.getSessionId() + ".json");
+                // 先写入临时文件，然后原子性移动，防止写入中断导致数据损坏
+                Path tempFile = sessionsDir.resolve("session-" + snapshot.getSessionId() + ".tmp");
+                MAPPER.writerWithDefaultPrettyPrinter().writeValue(tempFile.toFile(), snapshot);
+                Files.move(tempFile, file, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+                logger.debug("会话已保存: {}", snapshot.getSessionId());
+            } catch (IOException e) {
+                logger.error("保存会话失败", e);
+            }
         }
     }
 
@@ -70,7 +80,12 @@ public class SessionStorage {
             return null;
         }
         try {
-            Path file = sessionsDir.resolve("session-" + sessionId + ".json");
+            Path file = sessionsDir.resolve("session-" + sessionId + ".json").normalize();
+            // 确保解析后的路径仍在 sessionsDir 内
+            if (!file.startsWith(sessionsDir.normalize())) {
+                logger.warn("会话 ID 包含非法路径遍历: {}", sessionId);
+                return null;
+            }
             if (!Files.exists(file)) return null;
             return MAPPER.readValue(file.toFile(), SessionSnapshot.class);
         } catch (IOException e) {

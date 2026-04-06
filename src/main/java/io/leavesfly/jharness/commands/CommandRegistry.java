@@ -1,18 +1,17 @@
 package io.leavesfly.jharness.commands;
 
 import io.leavesfly.jharness.commands.handlers.*;
-import io.leavesfly.jharness.coordinator.AgentOrchestrator;
-import io.leavesfly.jharness.hooks.HookRegistry;
-import io.leavesfly.jharness.services.CronRegistry;import io.leavesfly.jharness.coordinator.TeamRegistry;
-import io.leavesfly.jharness.engine.QueryEngine;
-import io.leavesfly.jharness.hooks.HookRegistry;
-import io.leavesfly.jharness.tools.ToolRegistry;
-import io.leavesfly.jharness.engine.stream.StreamEvent;
 import io.leavesfly.jharness.config.Settings;
+import io.leavesfly.jharness.coordinator.AgentOrchestrator;
+import io.leavesfly.jharness.coordinator.TeamRegistry;
+import io.leavesfly.jharness.engine.QueryEngine;
+import io.leavesfly.jharness.engine.stream.StreamEvent;
+import io.leavesfly.jharness.hooks.HookRegistry;
 import io.leavesfly.jharness.mcp.McpClientManager;
 import io.leavesfly.jharness.memory.MemoryManager;
 import io.leavesfly.jharness.services.CronRegistry;
 import io.leavesfly.jharness.sessions.SessionStorage;
+import io.leavesfly.jharness.tools.ToolRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -152,6 +151,9 @@ public class CommandRegistry {
         register(ConfigPlusCommandHandler.createPluginCommand());
         register(ConfigPlusCommandHandler.createReloadPluginsCommand());
         register(ConfigPlusCommandHandler.createInitCommand());
+
+        // 工作目录命令
+        register(CdCommandHandler.createCdCommand());
 
         // 项目上下文命令
         register(IssueCommandHandler.createIssueCommand());

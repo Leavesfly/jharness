@@ -46,7 +46,7 @@ public class PermissionChecker {
         // 2. 检查命令黑名单（在白名单之前检查，防止通过白名单绕过命令限制）
         if (command != null) {
             for (String pattern : deniedCommands) {
-                if (command.matches(pattern.replace("*", ".*"))) {
+                if (matchesCommandPattern(command, pattern)) {
                     return PermissionDecision.deny("命令被拒绝: " + command);
                 }
             }
@@ -125,5 +125,16 @@ public class PermissionChecker {
 
     public PermissionMode getMode() {
         return mode;
+    }
+
+    /**
+     * 安全的命令模式匹配（使用 glob 风格，避免正则注入）
+     */
+    private boolean matchesCommandPattern(String command, String pattern) {
+        // 将 glob 模式转换为安全的正则：先转义所有正则元字符，再替换通配符
+        String regex = java.util.regex.Pattern.quote(pattern)
+                .replace("\\E*\\Q", "\\E.*\\Q")  // 将 * 替换为 .*
+                .replace("\\E?\\Q", "\\E.\\Q");   // 将 ? 替换为 .
+        return java.util.regex.Pattern.matches(regex, command);
     }
 }

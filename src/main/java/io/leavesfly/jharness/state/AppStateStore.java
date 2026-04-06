@@ -22,14 +22,14 @@ public class AppStateStore {
     /**
      * 返回当前状态快照
      */
-    public AppState get() {
+    public synchronized AppState get() {
         return state;
     }
     
     /**
      * 更新状态并通知监听器
      */
-    public void set(Consumer<AppState> updater) {
+    public synchronized void set(Consumer<AppState> updater) {
         updater.accept(state);
         notifyListeners();
     }
@@ -37,10 +37,14 @@ public class AppStateStore {
     /**
      * 注册监听器并返回取消订阅回调
      */
-    public Runnable subscribe(Listener listener) {
+    public synchronized Runnable subscribe(Listener listener) {
         listeners.add(listener);
         
-        return () -> listeners.remove(listener);
+        return () -> {
+            synchronized (AppStateStore.this) {
+                listeners.remove(listener);
+            }
+        };
     }
     
     /**

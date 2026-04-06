@@ -78,7 +78,9 @@ public class ToolRegistry {
      */
     public List<Map<String, Object>> toApiSchema() {
         List<Map<String, Object>> schemas = new ArrayList<>();
-        for (BaseTool<?> tool : tools.values()) {
+        // 创建快照，避免并发修改异常
+        List<BaseTool<?>> toolsSnapshot = new ArrayList<>(tools.values());
+        for (BaseTool<?> tool : toolsSnapshot) {
             Map<String, Object> schema = new LinkedHashMap<>();
             schema.put("name", tool.getName());
             schema.put("description", tool.getDescription());

@@ -18,6 +18,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
@@ -31,12 +32,13 @@ public class QueryEngine {
     private static final Logger logger = LoggerFactory.getLogger(QueryEngine.class);
 
     private final List<ConversationMessage> messages = java.util.Collections.synchronizedList(new ArrayList<>());
+    private final Object messageLock = new Object();
     private final CostTracker costTracker = new CostTracker();
     private final MessageCompactionService compactionService = new MessageCompactionService();
     private final OpenAiApiClient apiClient;
     private final ToolRegistry toolRegistry;
     private final PermissionChecker permissionChecker;
-    private final Path cwd;
+    private volatile Path cwd;
     private final String systemPrompt;
     private final int maxTurns;
 
@@ -49,6 +51,31 @@ public class QueryEngine {
         this.cwd = cwd;
         this.systemPrompt = systemPrompt;
         this.maxTurns = maxTurns;
+    }
+
+    /**
+     * 获取当前工作目录
+     */
+    public Path getCwd() {
+        return cwd;
+    }
+
+    /**
+     * 设置当前工作目录
+     *
+     * @param newCwd 新的工作目录路径，必须是已存在的目录
+     * @throws IllegalArgumentException 如果路径不存在或不是目录
+     */
+    public void setCwd(Path newCwd) {
+        if (newCwd == null) {
+            throw new IllegalArgumentException("工作目录不能为 null");
+        }
+        Path resolved = newCwd.toAbsolutePath().normalize();
+        if (!java.nio.file.Files.isDirectory(resolved)) {
+            throw new IllegalArgumentException("路径不存在或不是目录: " + resolved);
+        }
+        this.cwd = resolved;
+        logger.info("工作目录已切换到: {}", resolved);
     }
 
     /**
@@ -70,8 +97,10 @@ public class QueryEngine {
      * 加载消息历史
      */
     public void loadMessages(List<ConversationMessage> history) {
-        messages.clear();
-        messages.addAll(history);
+        synchronized (messageLock) {
+            messages.clear();
+            messages.addAll(history);
+        }
     }
 
     /**
@@ -106,11 +135,13 @@ public class QueryEngine {
                     logger.debug("执行第 {} 轮查询", turn + 1);
 
                     // 检查是否需要压缩消息历史
-                    if (compactionService.needsCompaction(messages)) {
-                        logger.info("消息历史过长 ({}条)，执行压缩", messages.size());
-                        List<ConversationMessage> compacted = compactionService.compact(messages);
-                        messages.clear();
-                        messages.addAll(compacted);
+                    synchronized (messageLock) {
+                        if (compactionService.needsCompaction(messages)) {
+                            logger.info("消息历史过长 ({}条)，执行压缩", messages.size());
+                            List<ConversationMessage> compacted = compactionService.compact(messages);
+                            messages.clear();
+                            messages.addAll(compacted);
+                        }
                     }
 
                     // 调用 API（传递工具定义）
@@ -183,8 +214,18 @@ public class QueryEngine {
                     })
                     .collect(Collectors.toList());
 
-            // 等待所有工具完成
-            CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+            // 等待所有工具完成（带超时控制）
+            try {
+                CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]))
+                        .get(5, TimeUnit.MINUTES);
+            } catch (java.util.concurrent.TimeoutException e) {
+                logger.error("工具并行执行超时 (5分钟)");
+            } catch (java.util.concurrent.ExecutionException e) {
+                logger.error("工具并行执行异常", e.getCause());
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                logger.error("工具并行执行被中断");
+            }
 
             // 收集结果
             List<ToolResultBlock> results = new ArrayList<>();
@@ -233,7 +274,11 @@ public class QueryEngine {
 
             } catch (Exception e) {
                 logger.error("工具执行失败: {}", toolUse.getName(), e);
-                return ToolResult.error("工具执行失败: " + e.getMessage());
+                String errorDetail = e.getMessage();
+                if (e.getCause() != null) {
+                    errorDetail += " (原因: " + e.getCause().getMessage() + ")";
+                }
+                return ToolResult.error("工具执行失败: " + errorDetail);
             }
         });
     }

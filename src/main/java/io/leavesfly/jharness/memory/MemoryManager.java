@@ -53,7 +53,11 @@ public class MemoryManager {
      */
     public void addMemory(String project, String title, String content, String category) {
         try {
-            Path projectDir = memoryDir.resolve(sanitize(project));
+            Path projectDir = memoryDir.resolve(sanitize(project)).normalize();
+            if (!projectDir.startsWith(memoryDir.normalize())) {
+                logger.warn("非法的项目路径: {}", project);
+                return;
+            }
             Files.createDirectories(projectDir);
 
             MemoryEntry entry = new MemoryEntry();
@@ -63,7 +67,7 @@ public class MemoryManager {
             entry.setCreatedAt(LocalDateTime.now());
             entry.setUpdatedAt(LocalDateTime.now());
 
-            Path memoryFile = projectDir.resolve(title + ".json");
+            Path memoryFile = projectDir.resolve(sanitize(title) + ".json");
             mapper.writeValue(memoryFile.toFile(), entry);
 
             logger.debug("记忆已添加: {}/{}", project, title);
@@ -97,7 +101,7 @@ public class MemoryManager {
      * 获取记忆详细信息
      */
     public MemoryEntry getMemoryDetails(String project, String title) {
-        Path memoryFile = memoryDir.resolve(sanitize(project)).resolve(title + ".json");
+        Path memoryFile = memoryDir.resolve(sanitize(project)).resolve(sanitize(title) + ".json");
         try {
             if (Files.exists(memoryFile)) {
                 return mapper.readValue(memoryFile.toFile(), MemoryEntry.class);
@@ -169,7 +173,7 @@ public class MemoryManager {
      * 读取记忆内容
      */
     public String readMemory(String project, String title) {
-        Path memoryFile = memoryDir.resolve(sanitize(project)).resolve(title + ".json");
+        Path memoryFile = memoryDir.resolve(sanitize(project)).resolve(sanitize(title) + ".json");
         try {
             if (Files.exists(memoryFile)) {
                 MemoryEntry entry = mapper.readValue(memoryFile.toFile(), MemoryEntry.class);
@@ -186,7 +190,7 @@ public class MemoryManager {
      * 更新记忆内容
      */
     public boolean updateMemory(String project, String title, String content) {
-        Path memoryFile = memoryDir.resolve(sanitize(project)).resolve(title + ".json");
+        Path memoryFile = memoryDir.resolve(sanitize(project)).resolve(sanitize(title) + ".json");
         try {
             if (Files.exists(memoryFile)) {
                 MemoryEntry entry = mapper.readValue(memoryFile.toFile(), MemoryEntry.class);
@@ -207,7 +211,7 @@ public class MemoryManager {
      * 删除记忆
      */
     public boolean removeMemory(String project, String title) {
-        Path memoryFile = memoryDir.resolve(sanitize(project)).resolve(title + ".json");
+        Path memoryFile = memoryDir.resolve(sanitize(project)).resolve(sanitize(title) + ".json");
         try {
             return Files.deleteIfExists(memoryFile);
         } catch (IOException e) {

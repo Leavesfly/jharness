@@ -32,11 +32,11 @@ public class TerminalUI {
     private static final Logger logger = LoggerFactory.getLogger(TerminalUI.class);
 
     private Terminal terminal;
-    private boolean running;
-    private boolean waitingForResponse;
+    private volatile boolean running;
+    private volatile boolean waitingForResponse;
     private final List<String> conversationHistory = java.util.Collections.synchronizedList(new ArrayList<>());
     private final StringBuilder currentInput = new StringBuilder();
-    private final StringBuilder pendingAssistantText = new StringBuilder();
+    private final StringBuffer pendingAssistantText = new StringBuffer();
     private String currentModel = "default";
     private String permissionMode = "default";
     private String statusMessage = "就绪";
@@ -201,9 +201,11 @@ public class TerminalUI {
      * 将缓冲的 AI 文本刷新到对话历史
      */
     private void flushPendingAssistantText() {
-        if (pendingAssistantText.length() > 0) {
-            addAssistantMessage(pendingAssistantText.toString());
-            pendingAssistantText.setLength(0);
+        synchronized (pendingAssistantText) {
+            if (pendingAssistantText.length() > 0) {
+                addAssistantMessage(pendingAssistantText.toString());
+                pendingAssistantText.setLength(0);
+            }
         }
     }
 
@@ -333,7 +335,9 @@ public class TerminalUI {
                 terminal.close();
                 terminal = null;
             }
-        } catch (IOException e) {}
+        } catch (IOException e) {
+            logger.warn("关闭终端时发生异常", e);
+        }
         System.out.println("\n感谢使用 JHarness!");
     }
 }

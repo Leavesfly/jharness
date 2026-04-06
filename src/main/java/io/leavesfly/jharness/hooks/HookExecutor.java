@@ -113,6 +113,11 @@ public class HookExecutor {
             
             if (!completed) {
                 process.destroyForcibly();
+                try {
+                    process.waitFor(2, java.util.concurrent.TimeUnit.SECONDS);
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                }
                 return new HookResult(
                     hook.getType(), false, null,
                     hook.isBlockOnFailure(),
@@ -213,6 +218,11 @@ public class HookExecutor {
             boolean completed = process.waitFor(hook.getTimeoutSeconds(), java.util.concurrent.TimeUnit.SECONDS);
             if (!completed) {
                 process.destroyForcibly();
+                try {
+                    process.waitFor(2, java.util.concurrent.TimeUnit.SECONDS);
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                }
                 return new HookResult(hook.getType(), false, null, hook.isBlockOnFailure(),
                         "Prompt hook timed out");
             }
@@ -270,6 +280,11 @@ public class HookExecutor {
             boolean completed = process.waitFor(hook.getTimeoutSeconds(), java.util.concurrent.TimeUnit.SECONDS);
             if (!completed) {
                 process.destroyForcibly();
+                try {
+                    process.waitFor(2, java.util.concurrent.TimeUnit.SECONDS);
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                }
                 return new HookResult(hook.getType(), false, null, hook.isBlockOnFailure(),
                         "Agent hook timed out");
             }
@@ -334,10 +349,10 @@ public class HookExecutor {
      * 简单的 fnmatch 实现（支持 * 和 ? 通配符）
      */
     private boolean fnmatch(String str, String pattern) {
-        String regex = pattern
-                .replace(".", "\\.")
-                .replace("*", ".*")
-                .replace("?", ".");
+        // 使用 Pattern.quote 安全转义所有正则元字符，然后替换通配符
+        String regex = Pattern.quote(pattern)
+                .replace("\\E*\\Q", "\\E.*\\Q")   // * 匹配任意字符
+                .replace("\\E?\\Q", "\\E.\\Q");    // ? 匹配单个字符
         return Pattern.matches(regex, str);
     }
 

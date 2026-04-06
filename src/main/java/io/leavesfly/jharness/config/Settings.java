@@ -262,6 +262,15 @@ public class Settings {
                 if (loaded.deniedTools != null) settings.deniedTools = loaded.deniedTools;
                 if (loaded.mcpServers != null) settings.mcpServers = loaded.mcpServers;
                 if (loaded.enabledPlugins != null) settings.enabledPlugins = loaded.enabledPlugins;
+                // 补全遗漏的字段合并
+                settings.maxTokens = loaded.maxTokens;
+                settings.maxTurns = loaded.maxTurns;
+                if (loaded.effort != null) settings.effort = loaded.effort;
+                settings.passes = loaded.passes;
+                settings.vimEnabled = loaded.vimEnabled;
+                settings.voiceEnabled = loaded.voiceEnabled;
+                settings.fastMode = loaded.fastMode;
+                if (loaded.systemPrompt != null) settings.systemPrompt = loaded.systemPrompt;
             } catch (Exception e) {
                 // 配置文件解析失败时使用默认值
             }

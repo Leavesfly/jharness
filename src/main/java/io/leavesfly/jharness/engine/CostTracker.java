@@ -3,6 +3,7 @@ package io.leavesfly.jharness.engine;
 import io.leavesfly.jharness.engine.model.UsageSnapshot;
 
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * 成本追踪器
@@ -11,10 +12,10 @@ import java.util.concurrent.atomic.AtomicInteger;
  * 使用 AtomicInteger 保证线程安全。
  */
 public class CostTracker {
-    private final AtomicInteger totalInputTokens = new AtomicInteger();
-    private final AtomicInteger totalOutputTokens = new AtomicInteger();
-    private final AtomicInteger totalCacheReadTokens = new AtomicInteger();
-    private final AtomicInteger totalCacheCreationTokens = new AtomicInteger();
+    private final AtomicLong totalInputTokens = new AtomicLong();
+    private final AtomicLong totalOutputTokens = new AtomicLong();
+    private final AtomicLong totalCacheReadTokens = new AtomicLong();
+    private final AtomicLong totalCacheCreationTokens = new AtomicLong();
     private final AtomicInteger requestCount = new AtomicInteger();
 
     /**
@@ -32,19 +33,19 @@ public class CostTracker {
         requestCount.incrementAndGet();
     }
 
-    public int getTotalInputTokens() {
+    public long getTotalInputTokens() {
         return totalInputTokens.get();
     }
 
-    public int getTotalOutputTokens() {
+    public long getTotalOutputTokens() {
         return totalOutputTokens.get();
     }
 
-    public int getTotalCacheReadTokens() {
+    public long getTotalCacheReadTokens() {
         return totalCacheReadTokens.get();
     }
 
-    public int getTotalCacheCreationTokens() {
+    public long getTotalCacheCreationTokens() {
         return totalCacheCreationTokens.get();
     }
 
@@ -55,7 +56,7 @@ public class CostTracker {
     /**
      * 获取总 token 数
      */
-    public int getTotalTokens() {
+    public long getTotalTokens() {
         return totalInputTokens.get() + totalOutputTokens.get()
                 + totalCacheReadTokens.get() + totalCacheCreationTokens.get();
     }
@@ -82,7 +83,7 @@ public class CostTracker {
      * 转换为 UsageSnapshot
      */
     public UsageSnapshot toUsageSnapshot() {
-        return new UsageSnapshot(getTotalInputTokens(), getTotalOutputTokens(),
-                getTotalCacheReadTokens(), getTotalCacheCreationTokens());
+        return new UsageSnapshot((int) getTotalInputTokens(), (int) getTotalOutputTokens(),
+                (int) getTotalCacheReadTokens(), (int) getTotalCacheCreationTokens());
     }
 }

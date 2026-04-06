@@ -39,9 +39,15 @@ public class ConsoleInteractiveSession {
 
     private final CommandRegistry commandRegistry;
     private final AtomicBoolean waitingForResponse = new AtomicBoolean(false);
-    private final StringBuilder pendingText = new StringBuilder();
+    private final StringBuffer pendingText = new StringBuffer();
     private Instant queryStartTime;
     private int currentToolCount;
+
+    /**
+     * 流式渲染缓冲区：累积所有 delta 文本，
+     * flush 时渲染已完成的行并清除已渲染部分，保留不完整的末尾行继续缓冲。
+     */
+    private final StringBuffer streamBuffer = new StringBuffer();
 
     public ConsoleInteractiveSession(QueryEngine queryEngine, String modelName, String permissionMode) {
         this(queryEngine, modelName, permissionMode, new CommandRegistry());
@@ -142,7 +148,7 @@ public class ConsoleInteractiveSession {
      */
     private void printPrompt() {
         CostTracker tracker = queryEngine.getCostTracker();
-        int totalTokens = tracker.getTotalTokens();
+        long totalTokens = tracker.getTotalTokens();
 
         // 右侧 token 计数（如果有的话）
         String tokenInfo = "";
@@ -239,39 +245,83 @@ public class ConsoleInteractiveSession {
 
     /**
      * 处理流式事件
+     *
+     * 使用增量渲染策略：将所有 delta 累积到 streamBuffer 中，
+     * 每次 flush 时只渲染新增的完整行，保留不完整的末尾行继续缓冲，
+     * 避免 markdown 元素（粗体、列表等）被拆分到不同渲染批次。
      */
     private void handleStreamEvent(StreamEvent event) {
         if (event instanceof AssistantTextDelta textDelta) {
-            pendingText.append(textDelta.getText());
-            // 遇到换行时刷新，实现流式效果
+            streamBuffer.append(textDelta.getText());
             if (textDelta.getText().contains("\n")) {
-                flushPendingText();
+                flushCompleteLines(false);
             }
         } else if (event instanceof ToolExecutionStarted toolStart) {
-            flushPendingText();
+            flushCompleteLines(true);
             currentToolCount++;
             printToolStart(toolStart.getToolName());
         } else if (event instanceof ToolExecutionCompleted toolDone) {
             printToolComplete(toolDone.getToolName(), toolDone.getResult(), toolDone.isError());
         } else if (event instanceof AssistantTurnComplete) {
-            flushPendingText();
+            flushCompleteLines(true);
+        }
+    }
+
+    /**
+     * 渲染流式缓冲区中的完整行。
+     *
+     * @param flushAll true 时强制渲染所有内容（包括最后不完整的行）
+     */
+    private void flushCompleteLines(boolean flushAll) {
+        synchronized (streamBuffer) {
+            if (streamBuffer.length() == 0) {
+                return;
+            }
+
+            String buffered = streamBuffer.toString();
+
+            if (!flushAll) {
+                // 非强制模式：只渲染到最后一个换行符为止，保留不完整的末尾行
+                int lastNewline = buffered.lastIndexOf('\n');
+                if (lastNewline < 0) {
+                    return;
+                }
+                // 提取完整行部分进行渲染，保留剩余部分
+                String completeText = buffered.substring(0, lastNewline + 1);
+                String remainder = buffered.substring(lastNewline + 1);
+                streamBuffer.setLength(0);
+                streamBuffer.append(remainder);
+
+                String rendered = markdownRenderer.render(completeText);
+                System.out.print(rendered);
+                System.out.flush();
+            } else {
+                // 强制模式：渲染全部内容并清空缓冲区
+                streamBuffer.setLength(0);
+
+                String rendered = markdownRenderer.render(buffered);
+                System.out.print(rendered);
+                System.out.flush();
+            }
         }
     }
 
     /**
      * 刷新缓冲的文本（带 Markdown 渲染）
+     * 保留用于非流式场景的兼容
      */
     private void flushPendingText() {
-        if (pendingText.isEmpty()) {
-            return;
-        }
-        String text = pendingText.toString();
-        pendingText.setLength(0);
+        synchronized (pendingText) {
+            if (pendingText.length() == 0) {
+                return;
+            }
+            String text = pendingText.toString();
+            pendingText.setLength(0);
 
-        // 使用 Markdown 渲染器
-        String rendered = markdownRenderer.render(text);
-        System.out.print(rendered);
-        System.out.flush();
+            String rendered = markdownRenderer.render(text);
+            System.out.print(rendered);
+            System.out.flush();
+        }
     }
 
     /**
@@ -410,7 +460,7 @@ public class ConsoleInteractiveSession {
     /**
      * 格式化 token 数量（带千分位）
      */
-    private String formatTokenCount(int count) {
+    private String formatTokenCount(long count) {
         if (count >= 1_000_000) {
             return String.format("%.1fM", count / 1_000_000.0);
         } else if (count >= 1_000) {

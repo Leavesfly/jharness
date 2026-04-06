@@ -27,11 +27,17 @@ public class BashTool extends BaseTool<BashToolInput> {
         "rm\\s+-rf\\s+/[^.]",    // rm -rf / (根目录)
         "mkfs\\.",                // 格式化磁盘
         "dd\\s+if=",             // 低级磁盘操作
-        ":(){ :|:& };:",         // fork 炸弹
+        ":\\(\\)\\{\\s*:|:&\\s*\\};:",  // fork 炸弹
         "chmod\\s+-R\\s+777\\s+/", // 全局权限修改
         "shutdown",              // 关机
         "reboot",                // 重启
-        "init\\s+0"              // 关机
+        "init\\s+0",             // 关机
+        "curl.*\\|.*sh",         // 远程脚本执行
+        "wget.*\\|.*sh",         // 远程脚本执行
+        "\\bsudo\\s+rm",         // sudo 删除
+        ">\\/dev\\/sd",           // 直接写磁盘设备
+        "mv\\s+/",               // 移动根目录文件
+        "chown\\s+-R.*/"         // 全局所有权修改
     );
 
     @Override
@@ -63,6 +69,11 @@ public class BashTool extends BaseTool<BashToolInput> {
                 if (dangerousMatch != null) {
                     logger.warn("拒绝执行高危命令: {}", command);
                     return ToolResult.error("安全限制: 检测到高危命令模式，已拒绝执行");
+                }
+
+                // 安全检查：限制命令长度，防止超长命令攻击
+                if (command.length() > 10000) {
+                    return ToolResult.error("安全限制: 命令长度超过限制 (最大 10000 字符)");
                 }
 
                 logger.debug("执行命令: {}", command);

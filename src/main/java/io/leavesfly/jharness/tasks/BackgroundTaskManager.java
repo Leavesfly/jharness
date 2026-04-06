@@ -98,8 +98,24 @@ public class BackgroundTaskManager {
      */
     public boolean stopTask(String taskId) {
         TaskRecord task = tasks.get(taskId);
-        if (task != null && task.getStatus() == TaskStatus.RUNNING) {
+        if (task == null) return false;
+
+        if (task.getStatus() == TaskStatus.RUNNING || task.getStatus() == TaskStatus.PENDING) {
+            // 先终止进程
+            Process process = processes.get(taskId);
+            if (process != null && process.isAlive()) {
+                process.destroy();
+                try {
+                    if (!process.waitFor(3, java.util.concurrent.TimeUnit.SECONDS)) {
+                        process.destroyForcibly();
+                    }
+                } catch (InterruptedException e) {
+                    process.destroyForcibly();
+                    Thread.currentThread().interrupt();
+                }
+            }
             task.setStatus(TaskStatus.STOPPED);
+            processes.remove(taskId);
             return true;
         }
         return false;
@@ -204,7 +220,11 @@ public class BackgroundTaskManager {
                 task.setStatus(TaskStatus.FAILED);
                 logger.error("Agent 任务 {} 失败", taskId, e);
             } finally {
-                processes.remove(taskId);
+                Process remainingProcess = processes.remove(taskId);
+                if (remainingProcess != null && remainingProcess.isAlive()) {
+                    remainingProcess.destroyForcibly();
+                    logger.warn("Agent 任务 {} 的进程在 finally 中被强制终止", taskId);
+                }
             }
         });
 
@@ -238,13 +258,17 @@ public class BackgroundTaskManager {
         TaskRecord task = tasks.get(taskId);
         if (task == null) return false;
 
-        Process process = processes.get(taskId);
+        Process process = processes.remove(taskId);
         if (process != null && process.isAlive()) {
             process.destroyForcibly();
+            try {
+                process.waitFor(2, java.util.concurrent.TimeUnit.SECONDS);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
         }
 
         task.setStatus(TaskStatus.KILLED);
-        processes.remove(taskId);
         return true;
     }
 }

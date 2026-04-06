@@ -26,6 +26,28 @@ import java.util.stream.Stream;
 public class LspTool extends BaseTool<LspToolInput> {
     private static final Logger logger = LoggerFactory.getLogger(LspTool.class);
 
+    // 预编译的正则表达式
+    private static final Pattern JAVA_CLASS_PATTERN = Pattern.compile(
+            "^\\s*(?:public|private|protected)?\\s*(?:static)?\\s*(?:abstract)?\\s*class\\s+(\\w+)");
+    private static final Pattern JAVA_INTERFACE_PATTERN = Pattern.compile(
+            "^\\s*(?:public|private|protected)?\\s*interface\\s+(\\w+)");
+    private static final Pattern JAVA_METHOD_PATTERN = Pattern.compile(
+            "^\\s*(?:public|private|protected)?\\s*(?:static)?\\s*(?:abstract)?\\s*(?:[\\w<>\\[\\],\\s]+)\\s+(\\w+)\\s*\\(");
+    private static final Pattern JAVA_FIELD_PATTERN = Pattern.compile(
+            "^\\s*(?:public|private|protected)?\\s*(?:static)?\\s*(?:final)?\\s*([\\w<>\\[\\],\\s]+)\\s+(\\w+)\\s*[=;]");
+    private static final Pattern PYTHON_CLASS_PATTERN = Pattern.compile("^class\\s+(\\w+)");
+    private static final Pattern PYTHON_FUNCTION_PATTERN = Pattern.compile("^(?:async\\s+)?def\\s+(\\w+)\\s*\\(");
+    private static final Pattern JS_FUNCTION_PATTERN = Pattern.compile(
+            "(?:function\\s+(\\w+)|const\\s+(\\w+)\\s*=\\s*(?:async\\s+)?\\(|let\\s+(\\w+)\\s*=)");
+    private static final Pattern JS_CLASS_PATTERN = Pattern.compile("class\\s+(\\w+)");
+    private static final java.util.Set<String> JAVA_KEYWORDS = java.util.Set.of(
+            "public", "private", "protected", "static", "final", "abstract", "class", "interface",
+            "void", "int", "long", "double", "float", "boolean", "char", "byte", "short", "String",
+            "new", "return", "if", "else", "for", "while", "do", "switch", "case", "break",
+            "continue", "try", "catch", "finally", "throw", "throws", "extends", "implements",
+            "import", "package", "this", "super", "instanceof", "enum", "const", "goto", "assert",
+            "transient", "volatile", "strictfp", "native", "synchronized");
+
     @Override
     public String getName() {
         return "lsp";
@@ -202,27 +224,22 @@ public class LspTool extends BaseTool<LspToolInput> {
     }
 
     private void extractJavaSymbols(List<String> lines, List<Map<String, Object>> symbols) {
-        Pattern classPattern = Pattern.compile("^\\s*(?:public|private|protected)?\\s*(?:static)?\\s*(?:abstract)?\\s*class\\s+(\\w+)");
-        Pattern interfacePattern = Pattern.compile("^\\s*(?:public|private|protected)?\\s*interface\\s+(\\w+)");
-        Pattern methodPattern = Pattern.compile("^\\s*(?:public|private|protected)?\\s*(?:static)?\\s*(?:abstract)?\\s*(?:[\\w<>\\[\\],\\s]+)\\s+(\\w+)\\s*\\(");
-        Pattern fieldPattern = Pattern.compile("^\\s*(?:public|private|protected)?\\s*(?:static)?\\s*(?:final)?\\s*([\\w<>\\[\\],\\s]+)\\s+(\\w+)\\s*[=;]");
-
         for (int i = 0; i < lines.size(); i++) {
             String line = lines.get(i);
 
-            Matcher classMatcher = classPattern.matcher(line);
+            Matcher classMatcher = JAVA_CLASS_PATTERN.matcher(line);
             if (classMatcher.find()) {
                 symbols.add(createSymbol(classMatcher.group(1), "class", i + 1, 1));
                 continue;
             }
 
-            Matcher interfaceMatcher = interfacePattern.matcher(line);
+            Matcher interfaceMatcher = JAVA_INTERFACE_PATTERN.matcher(line);
             if (interfaceMatcher.find()) {
                 symbols.add(createSymbol(interfaceMatcher.group(1), "interface", i + 1, 1));
                 continue;
             }
 
-            Matcher methodMatcher = methodPattern.matcher(line);
+            Matcher methodMatcher = JAVA_METHOD_PATTERN.matcher(line);
             if (methodMatcher.find()) {
                 String methodName = methodMatcher.group(1);
                 if (!isJavaKeyword(methodName)) {
@@ -231,7 +248,7 @@ public class LspTool extends BaseTool<LspToolInput> {
                 continue;
             }
 
-            Matcher fieldMatcher = fieldPattern.matcher(line);
+            Matcher fieldMatcher = JAVA_FIELD_PATTERN.matcher(line);
             if (fieldMatcher.find()) {
                 String fieldName = fieldMatcher.group(2);
                 if (!isJavaKeyword(fieldName) && !fieldName.equals("class") && !fieldName.equals("interface")) {
@@ -242,19 +259,16 @@ public class LspTool extends BaseTool<LspToolInput> {
     }
 
     private void extractPythonSymbols(List<String> lines, List<Map<String, Object>> symbols) {
-        Pattern classPattern = Pattern.compile("^class\\s+(\\w+)");
-        Pattern functionPattern = Pattern.compile("^(?:async\\s+)?def\\s+(\\w+)\\s*\\(");
-
         for (int i = 0; i < lines.size(); i++) {
             String line = lines.get(i);
 
-            Matcher classMatcher = classPattern.matcher(line);
+            Matcher classMatcher = PYTHON_CLASS_PATTERN.matcher(line);
             if (classMatcher.find()) {
                 symbols.add(createSymbol(classMatcher.group(1), "class", i + 1, 1));
                 continue;
             }
 
-            Matcher functionMatcher = functionPattern.matcher(line);
+            Matcher functionMatcher = PYTHON_FUNCTION_PATTERN.matcher(line);
             if (functionMatcher.find()) {
                 symbols.add(createSymbol(functionMatcher.group(1), "function", i + 1, 1));
             }
@@ -262,19 +276,16 @@ public class LspTool extends BaseTool<LspToolInput> {
     }
 
     private void extractJavaScriptSymbols(List<String> lines, List<Map<String, Object>> symbols) {
-        Pattern functionPattern = Pattern.compile("(?:function\\s+(\\w+)|const\\s+(\\w+)\\s*=\\s*(?:async\\s+)?\\(|let\\s+(\\w+)\\s*=)");
-        Pattern classPattern = Pattern.compile("class\\s+(\\w+)");
-
         for (int i = 0; i < lines.size(); i++) {
             String line = lines.get(i);
 
-            Matcher classMatcher = classPattern.matcher(line);
+            Matcher classMatcher = JS_CLASS_PATTERN.matcher(line);
             if (classMatcher.find()) {
                 symbols.add(createSymbol(classMatcher.group(1), "class", i + 1, 1));
                 continue;
             }
 
-            Matcher functionMatcher = functionPattern.matcher(line);
+            Matcher functionMatcher = JS_FUNCTION_PATTERN.matcher(line);
             if (functionMatcher.find()) {
                 String name = functionMatcher.group(1) != null ? functionMatcher.group(1) :
                              functionMatcher.group(2) != null ? functionMatcher.group(2) :
@@ -411,7 +422,7 @@ public class LspTool extends BaseTool<LspToolInput> {
     }
 
     private boolean isJavaKeyword(String word) {
-        return word.matches("^(public|private|protected|static|final|abstract|class|interface|void|int|long|double|float|boolean|char|byte|short|String|new|return|if|else|for|while|do|switch|case|break|continue|try|catch|finally|throw|throws|extends|implements|import|package|this|super|instanceof|enum|const|goto|assert|transient|volatile|strictfp|native|synchronized)$");
+        return JAVA_KEYWORDS.contains(word);
     }
 
     private boolean isDefinitionLine(String line, String symbol) {

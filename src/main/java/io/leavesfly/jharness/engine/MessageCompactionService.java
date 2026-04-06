@@ -39,7 +39,7 @@ public class MessageCompactionService {
      */
     public List<ConversationMessage> compact(List<ConversationMessage> messages) {
         if (messages.size() <= maxMessages) {
-            return messages;
+            return new ArrayList<>(messages);
         }
 
         List<ConversationMessage> result = new ArrayList<>();
@@ -47,6 +47,9 @@ public class MessageCompactionService {
         // 计算需要保留的早期消息数量
         int earlyCount = Math.min(summaryMessages, messages.size() - maxMessages + 1);
         int keepFromEnd = maxMessages - 1; // -1 为摘要消息预留空间
+
+        // 确保 keepFromEnd 不超过消息总数
+        keepFromEnd = Math.min(keepFromEnd, messages.size() - 1);
 
         // 创建摘要（使用 USER 角色，因为 MessageRole 不包含 SYSTEM）
         List<ConversationMessage> earlyMessages = messages.subList(0, earlyCount);
@@ -70,6 +73,7 @@ public class MessageCompactionService {
 
         // 提取关键信息
         List<String> topics = new ArrayList<>();
+        List<String> toolActions = new ArrayList<>();
         for (ConversationMessage msg : messages) {
             for (ContentBlock block : msg.getContent()) {
                 if (block instanceof TextBlock textBlock) {
@@ -79,12 +83,22 @@ public class MessageCompactionService {
                     } else {
                         topics.add(text);
                     }
+                } else {
+                    // 记录非文本块的类型信息（如工具调用、工具结果等）
+                    String blockType = block.getClass().getSimpleName();
+                    if (!toolActions.contains(blockType)) {
+                        toolActions.add(blockType);
+                    }
                 }
             }
         }
 
         if (!topics.isEmpty()) {
             sb.append("主要话题: ").append(String.join("; ", topics.subList(0, Math.min(3, topics.size()))));
+        }
+
+        if (!toolActions.isEmpty()) {
+            sb.append(" 涉及操作类型: ").append(String.join(", ", toolActions)).append("。");
         }
 
         return sb.toString();

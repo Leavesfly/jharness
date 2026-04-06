@@ -31,6 +31,14 @@ public class McpClientManager {
     private final Map<String, McpSession> sessions = new ConcurrentHashMap<>();
     private final ExecutorService executor = Executors.newCachedThreadPool();
     private final AtomicInteger requestIdCounter = new AtomicInteger(0);
+    private final OkHttpClient sharedHttpClient;
+
+    public McpClientManager() {
+        this.sharedHttpClient = new OkHttpClient.Builder()
+                .connectTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+                .readTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
+                .build();
+    }
 
     /**
      * 添加服务器配置
@@ -102,19 +110,32 @@ public class McpClientManager {
         pb.redirectErrorStream(true);
         Process process = pb.start();
         
-        // 创建会话
-        McpSession session = new StdioMcpSession(process, name);
-        session.initialize();
-        
-        // 发现工具和资源
-        List<McpConnectionStatus.McpToolInfo> tools = session.listTools();
-        List<McpConnectionStatus.McpResourceInfo> resources = session.listResources();
-        
-        sessions.put(name, session);
-        statuses.put(name, new McpConnectionStatus("connected", "stdio", null,
-            env != null && !env.isEmpty(), tools, resources));
-        
-        logger.info("MCP 服务器已连接: {}, 工具数: {}", name, tools.size());
+        try {
+            // 创建会话
+            McpSession session = new StdioMcpSession(process, name);
+            session.initialize();
+            
+            // 发现工具和资源
+            List<McpConnectionStatus.McpToolInfo> tools = session.listTools();
+            List<McpConnectionStatus.McpResourceInfo> resources = session.listResources();
+            
+            sessions.put(name, session);
+            statuses.put(name, new McpConnectionStatus("connected", "stdio", null,
+                env != null && !env.isEmpty(), tools, resources));
+            
+            logger.info("MCP 服务器已连接: {}, 工具数: {}", name, tools.size());
+        } catch (Exception e) {
+            // 初始化失败时清理进程，防止泄漏
+            if (process.isAlive()) {
+                process.destroyForcibly();
+                try {
+                    process.waitFor(2, java.util.concurrent.TimeUnit.SECONDS);
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                }
+            }
+            throw e;
+        }
     }
     
     /**
@@ -125,13 +146,7 @@ public class McpClientManager {
         String url = (String) config.get("url");
         Map<String, String> headers = (Map<String, String>) config.get("headers");
 
-        OkHttpClient.Builder clientBuilder = new OkHttpClient.Builder()
-                .connectTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
-                .readTimeout(60, java.util.concurrent.TimeUnit.SECONDS);
-
-        OkHttpClient httpClient = clientBuilder.build();
-
-        HttpMcpSession session = new HttpMcpSession(httpClient, url, headers, name);
+        HttpMcpSession session = new HttpMcpSession(sharedHttpClient, url, headers, name);
         session.initialize();
 
         List<McpConnectionStatus.McpToolInfo> tools = session.listTools();

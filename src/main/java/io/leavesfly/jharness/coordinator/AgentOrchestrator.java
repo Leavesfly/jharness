@@ -59,9 +59,16 @@ public class AgentOrchestrator {
         }
         
         return CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]))
+            .orTimeout(30, java.util.concurrent.TimeUnit.MINUTES)
             .thenApply(v -> futures.stream()
                 .map(CompletableFuture::join)
-                .toList());
+                .toList())
+            .exceptionally(e -> {
+                logger.error("并行 Agent 执行超时或异常", e);
+                return futures.stream()
+                    .map(f -> f.getNow(new AgentResult("unknown", "unknown", false, null, "执行超时")))
+                    .toList();
+            });
     }
     
     /**
@@ -151,6 +158,7 @@ public class AgentOrchestrator {
                 return result;
                 
             } catch (Exception e) {
+                logger.error("Agent {} 执行失败: {}", agentId, task.getName(), e);
                 AgentResult result = new AgentResult(
                     agentId,
                     task.getName(),
@@ -201,6 +209,15 @@ public class AgentOrchestrator {
      */
     public void shutdown() {
         executorService.shutdown();
+        try {
+            if (!executorService.awaitTermination(30, java.util.concurrent.TimeUnit.SECONDS)) {
+                executorService.shutdownNow();
+                logger.warn("Agent 线程池强制关闭，部分任务可能未完成");
+            }
+        } catch (InterruptedException e) {
+            executorService.shutdownNow();
+            Thread.currentThread().interrupt();
+        }
         activeAgents.clear();
     }
     

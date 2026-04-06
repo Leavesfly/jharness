@@ -34,6 +34,7 @@ public class CronRegistry {
     private final List<Map<String, Object>> jobs = java.util.Collections.synchronizedList(new ArrayList<>());
     private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(2);
     private final Map<String, ScheduledFuture<?>> scheduledTasks = new HashMap<>();
+    private final Object jobsLock = new Object();
     private CronJobExecutor jobExecutor;
 
     /**
@@ -166,19 +167,20 @@ public class CronRegistry {
     /**
      * 加载作业列表
      */
-    @SuppressWarnings("unchecked")
     private void loadJobs() {
-        try {
-            if (Files.exists(registryPath)) {
-                String content = Files.readString(registryPath);
-                List<Map<String, Object>> loaded = MAPPER.readValue(content, List.class);
+        synchronized (jobsLock) {
+            try {
+                if (Files.exists(registryPath)) {
+                    String content = Files.readString(registryPath);
+                    List<Map<String, Object>> loaded = MAPPER.readValue(content, List.class);
+                    jobs.clear();
+                    jobs.addAll(loaded);
+                    logger.debug("已加载 {} 个 cron 作业", jobs.size());
+                }
+            } catch (IOException e) {
+                logger.error("加载 cron 作业失败", e);
                 jobs.clear();
-                jobs.addAll(loaded);
-                logger.debug("已加载 {} 个 cron 作业", jobs.size());
             }
-        } catch (IOException e) {
-            logger.error("加载 cron 作业失败", e);
-            jobs.clear();
         }
     }
 
@@ -207,27 +209,41 @@ public class CronRegistry {
             throw new IllegalArgumentException("Job name is required");
         }
 
-        // 移除同名作业
-        jobs.removeIf(existing -> name.equals(existing.get("name")));
-
-        // 添加新作业
-        if (!job.containsKey("created_at")) {
-            job.put("created_at", Instant.now().toString());
-        }
-        job.put("updated_at", Instant.now().toString());
-        if (!job.containsKey("last_executed")) {
-            job.put("last_executed", null);
-        }
-        if (!job.containsKey("enabled")) {
-            job.put("enabled", true);
+        // 检查调度器是否已关闭
+        if (scheduler.isShutdown()) {
+            throw new IllegalStateException("调度器已关闭，无法添加新作业");
         }
 
-        jobs.add(job);
+        synchronized (jobsLock) {
+            // 移除同名作业
+            jobs.removeIf(existing -> name.equals(existing.get("name")));
 
-        // 按名称排序
-        jobs.sort(Comparator.comparing(j -> (String) j.getOrDefault("name", "")));
+            // 添加新作业
+            if (!job.containsKey("created_at")) {
+                job.put("created_at", Instant.now().toString());
+            }
+            job.put("updated_at", Instant.now().toString());
+            if (!job.containsKey("last_executed")) {
+                job.put("last_executed", null);
+            }
+            if (!job.containsKey("enabled")) {
+                job.put("enabled", true);
+            }
 
-        saveJobs();
+            jobs.add(job);
+
+            // 按名称排序
+            jobs.sort(Comparator.comparing(j -> (String) j.getOrDefault("name", "")));
+
+            saveJobs();
+        }
+
+        // 如果作业已启用，则调度它
+        Boolean enabled = (Boolean) job.getOrDefault("enabled", true);
+        if (Boolean.TRUE.equals(enabled)) {
+            scheduleJob(job);
+        }
+
         logger.info("Cron 作业已更新: {}", name);
     }
 
@@ -238,12 +254,19 @@ public class CronRegistry {
      * @return 如果删除成功返回 true，作业不存在返回 false
      */
     public boolean deleteJob(String name) {
-        int before = jobs.size();
-        jobs.removeIf(job -> name.equals(job.get("name")));
-        boolean removed = jobs.size() < before;
+        boolean removed;
+        synchronized (jobsLock) {
+            int before = jobs.size();
+            jobs.removeIf(job -> name.equals(job.get("name")));
+            removed = jobs.size() < before;
+
+            if (removed) {
+                saveJobs();
+            }
+        }
 
         if (removed) {
-            saveJobs();
+            cancelScheduledJob(name);
             logger.info("Cron 作业已删除: {}", name);
         }
 
@@ -279,11 +302,13 @@ public class CronRegistry {
      * @param executedAt 执行时间
      */
     public void markExecuted(String name, Instant executedAt) {
-        Map<String, Object> job = getJob(name);
-        if (job != null) {
-            job.put("last_executed", executedAt.toString());
-            job.put("execution_count", ((Number) job.getOrDefault("execution_count", 0)).intValue() + 1);
-            saveJobs();
+        synchronized (jobsLock) {
+            Map<String, Object> job = getJob(name);
+            if (job != null) {
+                job.put("last_executed", executedAt.toString());
+                job.put("execution_count", ((Number) job.getOrDefault("execution_count", 0)).intValue() + 1);
+                saveJobs();
+            }
         }
     }
 
