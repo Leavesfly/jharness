@@ -1,11 +1,10 @@
 package io.leavesfly.jharness.prompts;
 
-import io.leavesfly.jharness.skills.SkillDefinition;
-import io.leavesfly.jharness.skills.SkillRegistry;
+import io.leavesfly.jharness.extension.skills.SkillDefinition;
+import io.leavesfly.jharness.extension.skills.SkillRegistry;
 
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
-import java.util.List;
 
 /**
  * 系统提示构建器

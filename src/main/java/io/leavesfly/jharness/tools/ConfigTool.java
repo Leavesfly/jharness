@@ -1,9 +1,6 @@
 package io.leavesfly.jharness.tools;
 
-import io.leavesfly.jharness.config.Settings;
-import io.leavesfly.jharness.tools.ToolResult;
-import io.leavesfly.jharness.tools.ToolExecutionContext;
-import io.leavesfly.jharness.tools.BaseTool;
+import io.leavesfly.jharness.core.Settings;
 import io.leavesfly.jharness.tools.input.ConfigToolInput;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

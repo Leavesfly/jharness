@@ -1,7 +1,7 @@
 package io.leavesfly.jharness.tools;
 
-import io.leavesfly.jharness.tasks.BackgroundTaskManager;
-import io.leavesfly.jharness.tasks.TaskRecord;
+import io.leavesfly.jharness.agent.tasks.BackgroundTaskManager;
+import io.leavesfly.jharness.agent.tasks.TaskRecord;
 import io.leavesfly.jharness.tools.input.AgentToolInput;
 
 import java.nio.file.Path;

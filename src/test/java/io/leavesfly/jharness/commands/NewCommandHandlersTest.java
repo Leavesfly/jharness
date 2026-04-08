@@ -1,14 +1,17 @@
 package io.leavesfly.jharness.commands;
 
-import io.leavesfly.jharness.commands.handlers.*;
-import io.leavesfly.jharness.config.Settings;
-import io.leavesfly.jharness.engine.stream.StreamEvent;
+import io.leavesfly.jharness.command.commands.CommandContext;
+import io.leavesfly.jharness.command.commands.CommandRegistry;
+import io.leavesfly.jharness.command.commands.CommandResult;
+import io.leavesfly.jharness.command.commands.SlashCommand;
+import io.leavesfly.jharness.command.commands.handlers.*;
+import io.leavesfly.jharness.core.Settings;
+import io.leavesfly.jharness.core.engine.stream.StreamEvent;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 

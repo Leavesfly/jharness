@@ -1,7 +1,7 @@
 package io.leavesfly.jharness.tools;
 
-import io.leavesfly.jharness.mcp.McpClientManager;
-import io.leavesfly.jharness.mcp.types.McpConnectionStatus;
+import io.leavesfly.jharness.integration.mcp.McpClientManager;
+import io.leavesfly.jharness.integration.mcp.types.McpConnectionStatus;
 
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;

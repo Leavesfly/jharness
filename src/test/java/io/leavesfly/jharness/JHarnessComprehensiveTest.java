@@ -1,19 +1,20 @@
 package io.leavesfly.jharness;
 
-import io.leavesfly.jharness.commands.CommandRegistry;
-import io.leavesfly.jharness.config.Settings;
-import io.leavesfly.jharness.permissions.PermissionChecker;
-import io.leavesfly.jharness.permissions.PermissionMode;
-import io.leavesfly.jharness.engine.CostTracker;
-import io.leavesfly.jharness.engine.model.ConversationMessage;
-import io.leavesfly.jharness.engine.model.UsageSnapshot;
-import io.leavesfly.jharness.memory.MemoryManager;
-import io.leavesfly.jharness.sessions.SessionSnapshot;
-import io.leavesfly.jharness.sessions.SessionStorage;
-import io.leavesfly.jharness.tasks.BackgroundTaskManager;
-import io.leavesfly.jharness.tasks.TaskRecord;
-import io.leavesfly.jharness.tasks.TaskRecord.TaskType;
-import io.leavesfly.jharness.tasks.TaskStatus;
+import io.leavesfly.jharness.agent.coordinator.TeamRegistry;
+import io.leavesfly.jharness.command.commands.CommandRegistry;
+import io.leavesfly.jharness.core.Settings;
+import io.leavesfly.jharness.session.permissions.PermissionChecker;
+import io.leavesfly.jharness.session.permissions.PermissionMode;
+import io.leavesfly.jharness.core.engine.CostTracker;
+import io.leavesfly.jharness.core.engine.model.ConversationMessage;
+import io.leavesfly.jharness.core.engine.model.UsageSnapshot;
+import io.leavesfly.jharness.core.MemoryManager;
+import io.leavesfly.jharness.session.sessions.SessionSnapshot;
+import io.leavesfly.jharness.session.sessions.SessionStorage;
+import io.leavesfly.jharness.agent.tasks.BackgroundTaskManager;
+import io.leavesfly.jharness.agent.tasks.TaskRecord;
+import io.leavesfly.jharness.agent.tasks.TaskRecord.TaskType;
+import io.leavesfly.jharness.agent.tasks.TaskStatus;
 import io.leavesfly.jharness.tools.*;
 import io.leavesfly.jharness.tools.input.*;
 import org.junit.jupiter.api.Test;
@@ -233,8 +234,8 @@ class JHarnessComprehensiveTest {
 
     @Test
     void testTeamRegistry() {
-        io.leavesfly.jharness.coordinator.TeamRegistry teamRegistry =
-                new io.leavesfly.jharness.coordinator.TeamRegistry();
+        TeamRegistry teamRegistry =
+                new TeamRegistry();
 
         teamRegistry.createTeam("test-team", "Test team");
         teamRegistry.addAgent("test-team", "agent-1", "leader");

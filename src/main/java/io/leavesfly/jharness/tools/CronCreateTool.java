@@ -1,6 +1,6 @@
 package io.leavesfly.jharness.tools;
 
-import io.leavesfly.jharness.services.CronRegistry;
+import io.leavesfly.jharness.integration.CronRegistry;
 import io.leavesfly.jharness.tools.input.CronCreateToolInput;
 
 import java.util.HashMap;

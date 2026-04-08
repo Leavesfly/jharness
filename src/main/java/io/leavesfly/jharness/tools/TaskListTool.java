@@ -1,12 +1,9 @@
 package io.leavesfly.jharness.tools;
 
-import io.leavesfly.jharness.tasks.BackgroundTaskManager;
-import io.leavesfly.jharness.tools.ToolResult;
-import io.leavesfly.jharness.tools.ToolExecutionContext;
-import io.leavesfly.jharness.tools.BaseTool;
+import io.leavesfly.jharness.agent.tasks.BackgroundTaskManager;
 import io.leavesfly.jharness.tools.input.TaskListToolInput;
-import io.leavesfly.jharness.tasks.TaskRecord;
-import io.leavesfly.jharness.tasks.TaskStatus;
+import io.leavesfly.jharness.agent.tasks.TaskRecord;
+import io.leavesfly.jharness.agent.tasks.TaskStatus;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

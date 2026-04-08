@@ -1,7 +1,7 @@
 package io.leavesfly.jharness.tools;
 
-import io.leavesfly.jharness.skills.SkillDefinition;
-import io.leavesfly.jharness.skills.SkillRegistry;
+import io.leavesfly.jharness.extension.skills.SkillDefinition;
+import io.leavesfly.jharness.extension.skills.SkillRegistry;
 import io.leavesfly.jharness.tools.input.SkillToolInput;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

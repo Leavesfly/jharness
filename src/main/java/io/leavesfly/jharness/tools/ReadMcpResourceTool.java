@@ -1,6 +1,6 @@
 package io.leavesfly.jharness.tools;
 
-import io.leavesfly.jharness.mcp.McpClientManager;
+import io.leavesfly.jharness.integration.mcp.McpClientManager;
 import io.leavesfly.jharness.tools.input.ReadMcpResourceToolInput;
 
 import java.util.concurrent.CompletableFuture;

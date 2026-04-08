@@ -4,7 +4,10 @@ import io.leavesfly.jharness.tools.input.GrepToolInput;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.BufferedReader;
 import java.io.IOException;
+import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.util.ArrayList;
@@ -21,6 +24,8 @@ import java.util.stream.Collectors;
 public class GrepTool extends BaseTool<GrepToolInput> {
     private static final Logger logger = LoggerFactory.getLogger(GrepTool.class);
     private static final int MAX_RESULTS = 100;
+    /** 单文件大小上限（50MB），超过则跳过，防止 OOM */
+    private static final long MAX_FILE_SIZE_BYTES = 50L * 1024 * 1024;
 
     @Override
     public String getName() {
@@ -60,17 +65,28 @@ public class GrepTool extends BaseTool<GrepToolInput> {
                         }
 
                         try {
-                            List<String> lines = Files.readAllLines(file);
-                            for (int i = 0; i < lines.size(); i++) {
-                                if (pattern.matcher(lines.get(i)).find()) {
-                                    Path relativePath = basePath.relativize(file);
-                                    results.add(relativePath + ":" + (i + 1) + ":" + lines.get(i));
-                                    count[0]++;
-                                    if (count[0] >= MAX_RESULTS) break;
+                            // 跳过超大文件，防止一次性读入导致 OOM
+                            if (attrs.size() > MAX_FILE_SIZE_BYTES) {
+                                logger.debug("跳过超大文件 ({}MB): {}", attrs.size() / 1024 / 1024, file);
+                                return FileVisitResult.CONTINUE;
+                            }
+                            // 使用 BufferedReader 流式逐行读取，避免大文件全量加载到内存
+                            try (BufferedReader reader = new BufferedReader(
+                                    new InputStreamReader(Files.newInputStream(file), StandardCharsets.UTF_8))) {
+                                String line;
+                                int lineNumber = 0;
+                                while ((line = reader.readLine()) != null) {
+                                    lineNumber++;
+                                    if (pattern.matcher(line).find()) {
+                                        Path relativePath = basePath.relativize(file);
+                                        results.add(relativePath + ":" + lineNumber + ":" + line);
+                                        count[0]++;
+                                        if (count[0] >= MAX_RESULTS) break;
+                                    }
                                 }
                             }
                         } catch (IOException e) {
-                            // 跳过无法读取的文件
+                            // 跳过无法读取的文件（权限不足、二进制文件等）
                         }
 
                         return FileVisitResult.CONTINUE;

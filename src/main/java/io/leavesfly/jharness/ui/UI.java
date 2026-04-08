@@ -1,6 +1,5 @@
 package io.leavesfly.jharness.ui;
 
-import io.leavesfly.jharness.ui.backend.BackendHost;
 import io.leavesfly.jharness.ui.widgets.InputWidget;
 import io.leavesfly.jharness.ui.widgets.StatusBar;
 import io.leavesfly.jharness.ui.widgets.TranscriptWidget;

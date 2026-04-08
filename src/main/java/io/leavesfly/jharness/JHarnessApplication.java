@@ -1,25 +1,25 @@
 package io.leavesfly.jharness;
 
-import io.leavesfly.jharness.api.OpenAiApiClient;
-import io.leavesfly.jharness.config.Settings;
-import io.leavesfly.jharness.coordinator.TeamRegistry;
-import io.leavesfly.jharness.engine.QueryEngine;
-import io.leavesfly.jharness.engine.stream.AssistantTextDelta;
-import io.leavesfly.jharness.engine.stream.AssistantTurnComplete;
-import io.leavesfly.jharness.engine.stream.StreamEvent;
-import io.leavesfly.jharness.engine.stream.ToolExecutionStarted;
-import io.leavesfly.jharness.engine.stream.ToolExecutionCompleted;
-import io.leavesfly.jharness.mcp.McpClientManager;
-import io.leavesfly.jharness.permissions.PermissionChecker;
-import io.leavesfly.jharness.permissions.PermissionMode;
+import io.leavesfly.jharness.integration.api.OpenAiApiClient;
+import io.leavesfly.jharness.core.Settings;
+import io.leavesfly.jharness.agent.coordinator.TeamRegistry;
+import io.leavesfly.jharness.core.engine.QueryEngine;
+import io.leavesfly.jharness.core.engine.stream.AssistantTextDelta;
+import io.leavesfly.jharness.core.engine.stream.AssistantTurnComplete;
+import io.leavesfly.jharness.core.engine.stream.StreamEvent;
+import io.leavesfly.jharness.core.engine.stream.ToolExecutionStarted;
+import io.leavesfly.jharness.core.engine.stream.ToolExecutionCompleted;
+import io.leavesfly.jharness.integration.mcp.McpClientManager;
+import io.leavesfly.jharness.session.permissions.PermissionChecker;
+import io.leavesfly.jharness.session.permissions.PermissionMode;
 import io.leavesfly.jharness.prompts.SystemPromptBuilder;
-import io.leavesfly.jharness.services.CronRegistry;
-import io.leavesfly.jharness.skills.SkillRegistry;
-import io.leavesfly.jharness.tasks.BackgroundTaskManager;
+import io.leavesfly.jharness.integration.CronRegistry;
+import io.leavesfly.jharness.extension.skills.SkillRegistry;
+import io.leavesfly.jharness.agent.tasks.BackgroundTaskManager;
 import io.leavesfly.jharness.tools.ToolRegistry;
-import io.leavesfly.jharness.commands.CommandRegistry;
-import io.leavesfly.jharness.tui.ConsoleInteractiveSession;
-import io.leavesfly.jharness.tui.TerminalUI;
+import io.leavesfly.jharness.command.commands.CommandRegistry;
+import io.leavesfly.jharness.ui.tui.ConsoleInteractiveSession;
+import io.leavesfly.jharness.ui.tui.TerminalUI;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import picocli.CommandLine;
@@ -122,6 +122,7 @@ public class JHarnessApplication implements Callable<Integer> {
 
         // 校验 API Key
         if (settings.getApiKey() == null || settings.getApiKey().isBlank()) {
+            logger.error("未配置 API Key，请设置环境变量 ANTHROPIC_API_KEY 或在 ~/.jharness/settings.json 中配置");
             System.err.println("错误: 未配置 API Key。请设置环境变量 ANTHROPIC_API_KEY 或在 ~/.jharness/settings.json 中配置。");
             return 1;
         }
@@ -194,20 +195,18 @@ public class JHarnessApplication implements Callable<Integer> {
 
     /**
      * 运行单次查询模式
+     *
+     * 使用 try-with-resources 确保 QueryEngine（及其持有的 ApiClient）在完成后被正确关闭。
      */
     private int runPrintMode(Settings settings) {
-        try {
-            QueryEngine queryEngine = buildQueryEngine(settings);
-
+        try (QueryEngine queryEngine = buildQueryEngine(settings)) {
             System.out.println("正在处理...\n");
-
             queryEngine.submitMessage(printPrompt, event -> handleStreamEventConsole(event)).join();
-
             System.out.println();
             return 0;
         } catch (Exception e) {
-            System.err.println("查询失败: " + e.getMessage());
             logger.error("单次查询失败", e);
+            System.err.println("查询失败: " + e.getMessage());
             return 1;
         }
     }

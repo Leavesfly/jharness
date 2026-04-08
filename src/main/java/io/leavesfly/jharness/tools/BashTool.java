@@ -40,6 +40,13 @@ public class BashTool extends BaseTool<BashToolInput> {
         "chown\\s+-R.*/"         // 全局所有权修改
     );
 
+    /**
+     * 只读命令前缀白名单
+     *
+     * 注意：仅凭命令前缀判断只读性并不可靠（如 echo "x" > file），
+     * 此处仅作为权限提示，实际安全保障依赖 PermissionChecker。
+     */
+
     @Override
     public String getName() {
         return "bash";
@@ -125,18 +132,44 @@ public class BashTool extends BaseTool<BashToolInput> {
         if (input.getCommand() == null) {
             return false;
         }
-        String cmd = input.getCommand().toLowerCase();
-        // 已知的只读命令前缀
+        String command = input.getCommand();
+        String trimmedCmd = command.trim().toLowerCase();
+
+        // 如果命令包含重定向或管道写操作，则不是只读
+        // 注意：这里只做简单检测，复杂场景仍依赖 PermissionChecker 兜底
+        if (containsWriteOperator(command)) {
+            return false;
+        }
+
+        // 已知的只读命令前缀白名单
         Set<String> readOnlyPrefixes = Set.of(
-            "ls", "cat", "head", "tail", "grep", "find", "wc", "echo",
+            "ls", "cat", "head", "tail", "grep", "find", "wc",
             "pwd", "whoami", "date", "env", "printenv", "which", "type",
-            "file", "stat", "du", "df", "uname", "id", "ps", "top",
+            "file", "stat", "du", "df", "uname", "id", "ps",
             "git log", "git status", "git diff", "git show", "git branch"
         );
-        String trimmedCmd = cmd.trim();
         return readOnlyPrefixes.stream().anyMatch(prefix ->
-            trimmedCmd.equals(prefix) || trimmedCmd.startsWith(prefix + " ") || trimmedCmd.startsWith(prefix + "\t")
+            trimmedCmd.equals(prefix)
+                || trimmedCmd.startsWith(prefix + " ")
+                || trimmedCmd.startsWith(prefix + "\t")
         );
+    }
+
+    /**
+     * 检测命令中是否包含写操作符（重定向、管道写等）
+     *
+     * 这是一个启发式检测，用于过滤掉明显的写操作命令。
+     */
+    private static boolean containsWriteOperator(String command) {
+        // 检测输出重定向（> 和 >>），排除 >= 和 => 等比较符
+        if (command.matches(".*(?<![=><!])>(?!=).*")) {
+            return true;
+        }
+        // 检测 tee 命令（将输出写入文件）
+        if (command.matches(".*\\btee\\b.*")) {
+            return true;
+        }
+        return false;
     }
 
     /**

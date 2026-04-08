@@ -1,15 +1,13 @@
 package io.leavesfly.jharness;
 
-import io.leavesfly.jharness.config.Settings;
-import io.leavesfly.jharness.engine.QueryEngine;
-import io.leavesfly.jharness.permissions.PermissionChecker;
-import io.leavesfly.jharness.permissions.PermissionMode;
+import io.leavesfly.jharness.core.Settings;
+import io.leavesfly.jharness.session.permissions.PermissionChecker;
+import io.leavesfly.jharness.session.permissions.PermissionMode;
 import io.leavesfly.jharness.tools.*;
 import io.leavesfly.jharness.tools.input.*;
 import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 
-import java.nio.file.Path;
 import java.nio.file.Paths;
 
 /**

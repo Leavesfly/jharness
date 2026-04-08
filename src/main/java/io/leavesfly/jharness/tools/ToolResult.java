@@ -1,9 +1,7 @@
 package io.leavesfly.jharness.tools;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import io.leavesfly.jharness.engine.model.ToolResultBlock;
-
-import java.util.concurrent.CompletableFuture;
+import io.leavesfly.jharness.core.engine.model.ToolResultBlock;
 
 /**
  * 工具执行结果

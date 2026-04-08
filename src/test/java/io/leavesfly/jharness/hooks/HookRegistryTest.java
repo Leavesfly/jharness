@@ -1,14 +1,12 @@
 package io.leavesfly.jharness.hooks;
 
-import io.leavesfly.jharness.hooks.schemas.HookDefinition;
-import io.leavesfly.jharness.hooks.schemas.HookDefinition.AgentHookDefinition;
-import io.leavesfly.jharness.hooks.schemas.HookDefinition.CommandHookDefinition;
-import io.leavesfly.jharness.hooks.schemas.HookDefinition.HttpHookDefinition;
-import io.leavesfly.jharness.hooks.schemas.HookDefinition.PromptHookDefinition;
+import io.leavesfly.jharness.agent.hooks.HookEvent;
+import io.leavesfly.jharness.agent.hooks.HookRegistry;
+import io.leavesfly.jharness.agent.hooks.schemas.HookDefinition.AgentHookDefinition;
+import io.leavesfly.jharness.agent.hooks.schemas.HookDefinition.CommandHookDefinition;
+import io.leavesfly.jharness.agent.hooks.schemas.HookDefinition.HttpHookDefinition;
+import io.leavesfly.jharness.agent.hooks.schemas.HookDefinition.PromptHookDefinition;
 import org.junit.jupiter.api.Test;
-
-import java.nio.file.Paths;
-import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 

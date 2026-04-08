@@ -1,6 +1,6 @@
 package io.leavesfly.jharness.tools;
 
-import io.leavesfly.jharness.services.CronRegistry;
+import io.leavesfly.jharness.integration.CronRegistry;
 import io.leavesfly.jharness.tools.input.CronDeleteToolInput;
 
 import java.util.concurrent.CompletableFuture;

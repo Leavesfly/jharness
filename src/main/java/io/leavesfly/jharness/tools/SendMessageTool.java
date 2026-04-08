@@ -1,8 +1,8 @@
 package io.leavesfly.jharness.tools;
 
-import io.leavesfly.jharness.tasks.BackgroundTaskManager;
-import io.leavesfly.jharness.tasks.TaskRecord;
-import io.leavesfly.jharness.tasks.TaskStatus;
+import io.leavesfly.jharness.agent.tasks.BackgroundTaskManager;
+import io.leavesfly.jharness.agent.tasks.TaskRecord;
+import io.leavesfly.jharness.agent.tasks.TaskStatus;
 import io.leavesfly.jharness.tools.input.SendMessageToolInput;
 
 import java.util.concurrent.CompletableFuture;

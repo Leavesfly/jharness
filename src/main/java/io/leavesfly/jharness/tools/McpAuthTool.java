@@ -1,7 +1,7 @@
 package io.leavesfly.jharness.tools;
 
-import io.leavesfly.jharness.config.Settings;
-import io.leavesfly.jharness.mcp.McpClientManager;
+import io.leavesfly.jharness.core.Settings;
+import io.leavesfly.jharness.integration.mcp.McpClientManager;
 import io.leavesfly.jharness.tools.input.McpAuthToolInput;
 
 import java.util.HashMap;
@@ -91,10 +91,8 @@ public class McpAuthTool extends BaseTool<McpAuthToolInput> {
             // 更新服务器配置
             mcpManager.updateServerConfig(serverName, currentConfig);
 
-            // 重新连接所有服务器以应用更改
-            mcpManager.reconnectAll().thenRun(() -> {
-                // 异步完成，不需要等待
-            }).get(5000, java.util.concurrent.TimeUnit.MILLISECONDS);
+            // 重新连接所有服务器以应用更改（异步触发，不阻塞当前线程）
+            mcpManager.reconnectAll();
 
             String message = String.format(
                 "MCP authentication updated for server '%s' (mode: %s). Servers reconnecting...",
