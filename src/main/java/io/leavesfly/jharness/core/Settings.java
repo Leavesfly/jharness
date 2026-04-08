@@ -14,9 +14,9 @@ import java.util.*;
  * 包含所有配置选项，支持多层配置覆盖。
  */
 public class Settings {
-    private String model = "claude-3-5-sonnet-20241022";
+    private String model = "qwen3-max";
     private String apiKey;
-    private String baseUrl = "https://api.openai.com";
+    private String baseUrl = "https://dashscope.aliyuncs.com/compatible-mode/v1";
     private int maxTokens = 4096;
     private String systemPrompt;
     private PermissionMode permissionMode = PermissionMode.DEFAULT;
