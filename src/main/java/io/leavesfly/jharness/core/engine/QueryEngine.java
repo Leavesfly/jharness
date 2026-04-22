@@ -212,7 +212,8 @@ public class QueryEngine implements AutoCloseable {
 
                 // P2-M17：达到最大轮次时通过事件通知上层，避免用户误以为是模型正常结束
                 logger.warn("达到最大轮次限制 ({})", maxTurns);
-                eventConsumer.accept(new io.leavesfly.jharness.core.engine.stream.AssistantTurnComplete());
+                eventConsumer.accept(new io.leavesfly.jharness.core.engine.stream.AssistantTurnComplete(
+                        "达到最大轮次限制 (" + maxTurns + ")，本轮对话已结束"));
             } catch (Exception e) {
                 logger.error("查询执行失败", e);
                 throw new RuntimeException("查询执行失败", e);
