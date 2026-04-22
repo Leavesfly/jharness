@@ -101,6 +101,9 @@ public class NotebookEditTool extends BaseTool<NotebookEditToolInput> {
                         notebookPath.getFileName().toString(),
                         input.getMode()));
 
+            } catch (SecurityException e) {
+                logger.warn("Notebook 路径越权访问被拒绝: {}", e.getMessage());
+                return ToolResult.error(e.getMessage());
             } catch (IOException e) {
                 logger.error("Notebook 编辑失败", e);
                 return ToolResult.error("Notebook 编辑失败: " + e.getMessage());
@@ -114,12 +117,25 @@ public class NotebookEditTool extends BaseTool<NotebookEditToolInput> {
     }
 
     /**
-     * 解析路径（相对或绝对）
+     * 解析路径并强制限制在 base 工作目录内，防止路径穿越（../../etc/passwd）。
+     *
+     * 规则：
+     * - 绝对路径必须以 base 为前缀；
+     * - 相对路径先 resolve + normalize，再校验 startsWith(base)；
+     * - 对 base 做 toAbsolutePath().normalize()，保证比较基准一致。
      */
     private Path resolvePath(Path base, String path) {
-        Path resolved = Path.of(path);
-        if (!resolved.isAbsolute()) {
-            resolved = base.resolve(resolved).normalize();
+        if (path == null || path.isBlank()) {
+            throw new SecurityException("路径不能为空");
+        }
+        Path normalizedBase = base.toAbsolutePath().normalize();
+        Path candidate = Path.of(path);
+        if (!candidate.isAbsolute()) {
+            candidate = normalizedBase.resolve(candidate);
+        }
+        Path resolved = candidate.normalize();
+        if (!resolved.startsWith(normalizedBase)) {
+            throw new SecurityException("安全限制: 路径越出工作目录 -> " + path);
         }
         return resolved;
     }

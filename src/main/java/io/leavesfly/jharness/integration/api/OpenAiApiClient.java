@@ -48,9 +48,10 @@ public class OpenAiApiClient implements AutoCloseable {
     private static final Logger logger = LoggerFactory.getLogger(OpenAiApiClient.class);
     private static final String CHAT_COMPLETIONS_PATH = "/v1/chat/completions";
     private static final String CHAT_COMPLETIONS_SUFFIX = "/chat/completions";
-    private static final int CONNECT_TIMEOUT_SECONDS = 30;
-    private static final int READ_TIMEOUT_SECONDS = 300;
-    private static final int WRITE_TIMEOUT_SECONDS = 30;
+    /** 默认超时常量（P2-M28）：保留为常量以便单元测试覆盖，实际可通过构造器覆盖。 */
+    static final int DEFAULT_CONNECT_TIMEOUT_SECONDS = 30;
+    static final int DEFAULT_READ_TIMEOUT_SECONDS = 300;
+    static final int DEFAULT_WRITE_TIMEOUT_SECONDS = 30;
 
     private final OkHttpClient httpClient;
     private final ObjectMapper objectMapper;
@@ -62,7 +63,7 @@ public class OpenAiApiClient implements AutoCloseable {
     private final List<EventSource> activeEventSources = Collections.synchronizedList(new ArrayList<>());
 
     /**
-     * 构造 API 客户端
+     * 构造 API 客户端（默认超时）。
      *
      * @param baseUrl   API 基础 URL（为 null 时使用 OpenAI 默认地址）
      * @param apiKey    API 密钥
@@ -70,39 +71,96 @@ public class OpenAiApiClient implements AutoCloseable {
      * @param maxTokens 最大输出 token 数
      */
     public OpenAiApiClient(String baseUrl, String apiKey, String model, int maxTokens) {
+        this(baseUrl, apiKey, model, maxTokens,
+                DEFAULT_CONNECT_TIMEOUT_SECONDS, DEFAULT_READ_TIMEOUT_SECONDS, DEFAULT_WRITE_TIMEOUT_SECONDS);
+    }
+
+    /**
+     * 构造 API 客户端（自定义超时，P2-M28）。
+     *
+     * 暴露超时参数，方便调用方从 Settings / 环境变量注入，避免硬编码 300s 在慢连接下不够或快连接下浪费。
+     */
+    public OpenAiApiClient(String baseUrl, String apiKey, String model, int maxTokens,
+                           int connectTimeoutSeconds, int readTimeoutSeconds, int writeTimeoutSeconds) {
         if (apiKey == null || apiKey.isBlank()) {
             throw new IllegalArgumentException("API Key 不能为空，请设置环境变量 OPENAI_API_KEY 或 ANTHROPIC_API_KEY");
         }
+        if (connectTimeoutSeconds <= 0 || readTimeoutSeconds <= 0 || writeTimeoutSeconds <= 0) {
+            throw new IllegalArgumentException(
+                    "超时参数必须为正数: connect=" + connectTimeoutSeconds
+                            + ", read=" + readTimeoutSeconds
+                            + ", write=" + writeTimeoutSeconds);
+        }
         this.completionsUrl = buildCompletionsUrl(baseUrl != null ? baseUrl : "https://api.openai.com");
-        logger.info("API 请求地址: {}", completionsUrl);
+        logger.info("API 请求地址: {}, 超时(s) connect={}/read={}/write={}",
+                completionsUrl, connectTimeoutSeconds, readTimeoutSeconds, writeTimeoutSeconds);
         this.apiKey = apiKey;
         this.model = model;
         this.maxTokens = maxTokens;
         this.retryPolicy = RetryPolicy.defaultPolicy();
 
         this.httpClient = new OkHttpClient.Builder()
-                .connectTimeout(CONNECT_TIMEOUT_SECONDS, TimeUnit.SECONDS)
-                .readTimeout(READ_TIMEOUT_SECONDS, TimeUnit.SECONDS)
-                .writeTimeout(WRITE_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+                .connectTimeout(connectTimeoutSeconds, TimeUnit.SECONDS)
+                .readTimeout(readTimeoutSeconds, TimeUnit.SECONDS)
+                .writeTimeout(writeTimeoutSeconds, TimeUnit.SECONDS)
                 .build();
 
         this.objectMapper = new ObjectMapper();
     }
 
     /**
-     * 关闭客户端，释放连接池和线程池资源
+     * 关闭客户端，释放连接池和线程池资源。
+     *
+     * 改进点（P1-C2）：
+     * - 每个关闭步骤独立 try/catch，任何一步失败都不影响后续资源释放；
+     * - 即使 SSE 取消出现异常，也必须 clear 活跃列表，防止内存泄漏；
+     * - dispatcher.executorService().shutdown() 与 connectionPool.evictAll() 分别处理异常。
      */
     @Override
     public void close() {
-        // 关闭所有活跃的 SSE 连接
-        synchronized (activeEventSources) {
-            for (EventSource es : activeEventSources) {
-                es.cancel();
+        // 1. 取消所有活跃的 SSE 连接
+        try {
+            synchronized (activeEventSources) {
+                for (EventSource es : activeEventSources) {
+                    try {
+                        es.cancel();
+                    } catch (Exception e) {
+                        logger.warn("取消 SSE 连接失败", e);
+                    }
+                }
+                activeEventSources.clear();
             }
-            activeEventSources.clear();
+        } catch (Exception e) {
+            logger.warn("清理活跃 SSE 列表失败", e);
         }
-        httpClient.dispatcher().executorService().shutdown();
-        httpClient.connectionPool().evictAll();
+
+        // 2. 关闭 dispatcher 线程池：shutdown + 短暂等待 + shutdownNow 三段式
+        try {
+            java.util.concurrent.ExecutorService executor = httpClient.dispatcher().executorService();
+            executor.shutdown();
+            if (!executor.awaitTermination(5, TimeUnit.SECONDS)) {
+                logger.warn("HTTP dispatcher 未在 5s 内关闭，执行强制关闭");
+                executor.shutdownNow();
+                if (!executor.awaitTermination(3, TimeUnit.SECONDS)) {
+                    logger.warn("HTTP dispatcher 强制关闭仍未完成，放弃等待");
+                }
+            }
+        } catch (InterruptedException ie) {
+            Thread.currentThread().interrupt();
+            logger.warn("等待 HTTP dispatcher 关闭时被中断");
+            httpClient.dispatcher().executorService().shutdownNow();
+        } catch (Exception e) {
+            logger.warn("关闭 HTTP dispatcher 失败", e);
+        }
+
+        // 3. 清理连接池
+        try {
+            httpClient.connectionPool().evictAll();
+        } catch (Exception e) {
+            logger.warn("清理 HTTP 连接池失败", e);
+        }
+
+        // 4. 关闭可选的缓存
         if (httpClient.cache() != null) {
             try {
                 httpClient.cache().close();

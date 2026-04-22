@@ -51,9 +51,11 @@ public class PermissionChecker {
         }
 
         // 3. 检查路径规则（在白名单之前检查，防止通过白名单绕过路径限制）
+        //    P2-M9：对路径做规范化再匹配，避免通过 "a/../b"、"./" 等变形绕过规则
         if (filePath != null) {
+            String normalizedPath = normalizeForRuleMatch(filePath);
             for (PathRule rule : pathRules) {
-                if (rule.matches(filePath)) {
+                if (rule.matches(normalizedPath) || rule.matches(filePath)) {
                     if (!rule.isAllow()) {
                         return PermissionDecision.deny("路径 " + filePath + " 被规则拒绝: " + rule.getPattern());
                     }
@@ -136,5 +138,21 @@ public class PermissionChecker {
                 .replace("\\E*\\Q", "\\E.*\\Q")  // 将 * 替换为 .*
                 .replace("\\E?\\Q", "\\E.\\Q");   // 将 ? 替换为 .
         return java.util.regex.Pattern.matches(regex, command);
+    }
+
+    /**
+     * 用于路径规则匹配的路径规范化（P2-M9）。
+     *
+     * 使用 Path.normalize 处理 "." / ".." 片段；
+     * 保留原始大小写（POSIX 文件系统是大小写敏感的，若规则期望大小写不敏感，由规则自身用 glob 匹配）；
+     * 失败时回退到原始字符串，确保匹配链不会因为非法输入而被直接放行。
+     */
+    private static String normalizeForRuleMatch(String filePath) {
+        try {
+            return java.nio.file.Paths.get(filePath).normalize().toString();
+        } catch (Exception e) {
+            logger.debug("路径规范化失败，使用原始字符串匹配: {}", filePath);
+            return filePath;
+        }
     }
 }

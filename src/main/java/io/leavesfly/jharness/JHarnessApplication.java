@@ -213,23 +213,30 @@ public class JHarnessApplication implements Callable<Integer> {
 
     /**
      * 运行交互式模式
+     *
+     * 使用 try-with-resources 保证 QueryEngine（及其持有的 ApiClient/HTTP 连接池/线程池）
+     * 在会话结束或异常退出时被正确释放，避免 JVM 关闭时线程残留。
      */
     private int runInteractiveMode(Settings settings) {
-        QueryEngine queryEngine = buildQueryEngine(settings);
-
-        if (enableTUI) {
-            logger.info("启动 Lanterna TUI 界面");
-            TerminalUI tui = new TerminalUI();
-            tui.setQueryEngine(queryEngine);
-            tui.setCommandRegistry(new CommandRegistry());
-            tui.setStatus(settings.getModel(), permissionMode, "就绪");
-            tui.start();
-        } else {
-            ConsoleInteractiveSession session = new ConsoleInteractiveSession(
-                    queryEngine, settings.getModel(), permissionMode);
-            session.start();
+        try (QueryEngine queryEngine = buildQueryEngine(settings)) {
+            if (enableTUI) {
+                logger.info("启动 Lanterna TUI 界面");
+                TerminalUI tui = new TerminalUI();
+                tui.setQueryEngine(queryEngine);
+                tui.setCommandRegistry(new CommandRegistry());
+                tui.setStatus(settings.getModel(), permissionMode, "就绪");
+                tui.start();
+            } else {
+                ConsoleInteractiveSession session = new ConsoleInteractiveSession(
+                        queryEngine, settings.getModel(), permissionMode);
+                session.start();
+            }
+            return 0;
+        } catch (Exception e) {
+            logger.error("交互式会话异常退出", e);
+            System.err.println("会话异常退出: " + e.getMessage());
+            return 1;
         }
-        return 0;
     }
 
     /**

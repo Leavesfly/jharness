@@ -12,6 +12,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.regex.Pattern;
 
 /**
  * Bash 工具
@@ -22,23 +23,32 @@ public class BashTool extends BaseTool<BashToolInput> {
     private static final Logger logger = LoggerFactory.getLogger(BashTool.class);
     private static final int MAX_OUTPUT_LENGTH = 10000;
 
-    /** 高危命令黑名单：禁止直接执行的危险命令模式 */
-    private static final List<String> DANGEROUS_COMMAND_PATTERNS = List.of(
-        "rm\\s+-rf\\s+/[^.]",    // rm -rf / (根目录)
-        "mkfs\\.",                // 格式化磁盘
-        "dd\\s+if=",             // 低级磁盘操作
-        ":\\(\\)\\{\\s*:|:&\\s*\\};:",  // fork 炸弹
-        "chmod\\s+-R\\s+777\\s+/", // 全局权限修改
-        "shutdown",              // 关机
-        "reboot",                // 重启
-        "init\\s+0",             // 关机
-        "curl.*\\|.*sh",         // 远程脚本执行
-        "wget.*\\|.*sh",         // 远程脚本执行
-        "\\bsudo\\s+rm",         // sudo 删除
-        ">\\/dev\\/sd",           // 直接写磁盘设备
-        "mv\\s+/",               // 移动根目录文件
-        "chown\\s+-R.*/"         // 全局所有权修改
-    );
+    /**
+     * 高危命令黑名单：禁止直接执行的危险命令模式
+     *
+     * 注意：黑名单本质不安全（可通过编码、变量展开、命令替换等绕过），
+     * 此处仅作为最后防线。真正的安全保障必须依赖 PermissionChecker + 用户确认。
+     * 为提升覆盖度：所有模式均编译为 Pattern 并启用 CASE_INSENSITIVE，
+     * 同时新增对命令替换 / eval / base64 解码执行等常见绕过手段的检测。
+     */
+    private static final List<Pattern> DANGEROUS_COMMAND_PATTERNS = java.util.stream.Stream.of(
+        "rm\\s+-rf?\\s+(?:--no-preserve-root\\s+)?/(?![.\\w])", // rm -rf / 根目录及变形
+        "mkfs\\.",                              // 格式化磁盘
+        "dd\\s+if=.*of=/dev/",                  // 低级磁盘写操作
+        ":\\(\\)\\s*\\{\\s*:\\s*\\|\\s*:\\s*&\\s*\\}\\s*;\\s*:", // fork 炸弹
+        "chmod\\s+-R\\s+[0-7]{3,4}\\s+/",      // 全局权限修改
+        "\\b(?:shutdown|reboot|halt|poweroff)\\b", // 关机/重启
+        "\\binit\\s+0\\b",                     // 关机
+        "(?:curl|wget|fetch)\\s[^|;]*\\|\\s*(?:ba)?sh\\b", // 下载并执行
+        "\\bsudo\\s+rm\\b",                    // sudo 删除
+        ">\\s*/dev/sd[a-z]",                   // 直接写磁盘设备
+        "\\bmv\\s+/\\s",                       // 移动根目录
+        "\\bchown\\s+-R\\b.*\\s/\\s*$",        // 全局所有权修改
+        "\\beval\\s+",                          // eval 执行
+        "base64\\s+-d.*\\|\\s*(?:ba)?sh",      // base64 解码后执行
+        "`[^`]*`",                              // 反引号命令替换（启发式，会有误报）
+        "\\$\\([^)]*\\)"                       // $() 命令替换（启发式，会有误报）
+    ).map(p -> Pattern.compile(p, Pattern.CASE_INSENSITIVE)).toList();
 
     /**
      * 只读命令前缀白名单
@@ -173,12 +183,14 @@ public class BashTool extends BaseTool<BashToolInput> {
     }
 
     /**
-     * 检测高危命令模式，返回匹配的模式或 null
+     * 检测高危命令模式，返回匹配的模式或 null。
+     *
+     * 使用预编译 Pattern + find() 提升性能（相比每次 matches() 正则编译）。
      */
     private static String detectDangerousCommand(String command) {
-        for (String pattern : DANGEROUS_COMMAND_PATTERNS) {
-            if (command.matches(".*" + pattern + ".*")) {
-                return pattern;
+        for (Pattern pattern : DANGEROUS_COMMAND_PATTERNS) {
+            if (pattern.matcher(command).find()) {
+                return pattern.pattern();
             }
         }
         return null;

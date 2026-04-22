@@ -113,7 +113,7 @@ public class MemoryManager {
     }
 
     /**
-     * 按分类搜索记忆
+     * 按分类搜索记忆（P2-M2：逐条失败记录 debug 日志，便于排查）。
      */
     public List<String> searchByCategory(String project, String category) {
         Path projectDir = memoryDir.resolve(sanitize(project));
@@ -130,7 +130,7 @@ public class MemoryManager {
                         results.add(entry.getTitle());
                     }
                 } catch (IOException e) {
-                    // skip
+                    logger.debug("跳过无法解析的记忆文件: {}, 原因: {}", f, e.getMessage());
                 }
             });
         } catch (IOException e) {
@@ -154,12 +154,14 @@ public class MemoryManager {
             files.filter(f -> f.toString().endsWith(".json")).forEach(f -> {
                 try {
                     MemoryEntry entry = mapper.readValue(f.toFile(), MemoryEntry.class);
-                    if (entry.getTitle().toLowerCase().contains(lowerKeyword) ||
-                        entry.getContent().toLowerCase().contains(lowerKeyword)) {
-                        results.add(entry.getTitle());
+                    String title = entry.getTitle();
+                    String content = entry.getContent();
+                    if ((title != null && title.toLowerCase().contains(lowerKeyword))
+                            || (content != null && content.toLowerCase().contains(lowerKeyword))) {
+                        results.add(title);
                     }
                 } catch (IOException e) {
-                    // skip
+                    logger.debug("跳过无法解析的记忆文件: {}, 原因: {}", f, e.getMessage());
                 }
             });
         } catch (IOException e) {
@@ -300,18 +302,50 @@ public class MemoryManager {
         return cleaned[0];
     }
 
+    /**
+     * 规范化名称，仅保留字母数字和 . _ -，同时防止路径遍历。
+     *
+     * 改进点（P2-M11）：
+     * - 先替换非法字符，再循环压缩连续的点号和前后缀点号，
+     *   防止 ".." / "." / ". " / "..."  等各种路径遍历变形通过单次 replace 绕过；
+     * - 最终通过 Path.normalize + startsWith 校验（在调用方 resolveSafe 里完成）。
+     */
     private static String sanitize(String name) {
         if (name == null || name.isBlank()) {
             throw new IllegalArgumentException("Name cannot be null or blank");
         }
         String sanitized = name.replaceAll("[^a-zA-Z0-9._-]", "_");
-        // 防止路径遍历
-        sanitized = sanitized.replace("..", "_");
-        // 限制长度
+        // 反复消除连续的点，避免 "..." / "...." 等变形
+        while (sanitized.contains("..")) {
+            sanitized = sanitized.replace("..", "_");
+        }
+        // 去除前缀/后缀的 .，避免隐藏文件或目录跳转
+        while (sanitized.startsWith(".")) {
+            sanitized = "_" + sanitized.substring(1);
+        }
+        while (sanitized.endsWith(".")) {
+            sanitized = sanitized.substring(0, sanitized.length() - 1) + "_";
+        }
+        if (sanitized.isBlank()) {
+            sanitized = "_";
+        }
         if (sanitized.length() > 255) {
             sanitized = sanitized.substring(0, 255);
         }
         return sanitized;
+    }
+
+    /**
+     * 在 memoryDir 下安全解析出子路径，保证不越出 memoryDir（P2-M11）。
+     * 传入的 project 已经经过 sanitize 处理，这里额外做一次 normalize + startsWith 校验。
+     */
+    private Path resolveProjectDir(String project) {
+        Path base = memoryDir.toAbsolutePath().normalize();
+        Path resolved = base.resolve(sanitize(project)).normalize();
+        if (!resolved.startsWith(base)) {
+            throw new SecurityException("非法项目路径越界: " + project);
+        }
+        return resolved;
     }
 
     /**

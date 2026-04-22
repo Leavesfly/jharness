@@ -24,13 +24,28 @@ public class ToolRegistry {
     private final Map<String, BaseTool<?>> tools = new ConcurrentHashMap<>();
 
     /**
-     * 注册工具
+     * 注册工具（P2-M20：重复注册时警告）。
+     *
+     * 若两个工具实现使用了相同的 name，后注册者会静默覆盖前者，导致难以定位的行为问题；
+     * 这里改用 putIfAbsent + 日志告警，让问题尽早暴露。
      *
      * @param tool 工具实例
      */
     public void register(BaseTool<?> tool) {
-        tools.put(tool.getName(), tool);
-        logger.debug("已注册工具: {}", tool.getName());
+        if (tool == null) {
+            throw new IllegalArgumentException("tool 不能为 null");
+        }
+        String name = tool.getName();
+        if (name == null || name.isBlank()) {
+            throw new IllegalArgumentException("工具 name 不能为空: " + tool.getClass().getName());
+        }
+        BaseTool<?> existing = tools.putIfAbsent(name, tool);
+        if (existing != null) {
+            logger.warn("工具名冲突，忽略后注册者: name={}, keep={}, skipped={}",
+                    name, existing.getClass().getName(), tool.getClass().getName());
+            return;
+        }
+        logger.debug("已注册工具: {} ({})", name, tool.getClass().getSimpleName());
     }
 
     /**
@@ -183,6 +198,13 @@ public class ToolRegistry {
 
         logger.info("已注册 {} 个默认工具", registry.size());
         return registry;
+    }
+
+    /**
+     * 取消注册指定名称的工具，若不存在返回 false（P2-M20 配套能力）。
+     */
+    public boolean unregister(String name) {
+        return tools.remove(name) != null;
     }
 
     public int size() {

@@ -26,6 +26,8 @@ public class GrepTool extends BaseTool<GrepToolInput> {
     private static final int MAX_RESULTS = 100;
     /** 单文件大小上限（50MB），超过则跳过，防止 OOM */
     private static final long MAX_FILE_SIZE_BYTES = 50L * 1024 * 1024;
+    /** 用于二进制检测的前导字节数 */
+    private static final int BINARY_SNIFF_BYTES = 4096;
 
     @Override
     public String getName() {
@@ -68,6 +70,10 @@ public class GrepTool extends BaseTool<GrepToolInput> {
                             // 跳过超大文件，防止一次性读入导致 OOM
                             if (attrs.size() > MAX_FILE_SIZE_BYTES) {
                                 logger.debug("跳过超大文件 ({}MB): {}", attrs.size() / 1024 / 1024, file);
+                                return FileVisitResult.CONTINUE;
+                            }
+                            // 跳过二进制文件（P2-M21）：读取前 4KB 检测是否含 0x00 或非法 UTF-8 前导
+                            if (looksBinary(file)) {
                                 return FileVisitResult.CONTINUE;
                             }
                             // 使用 BufferedReader 流式逐行读取，避免大文件全量加载到内存
@@ -119,5 +125,25 @@ public class GrepTool extends BaseTool<GrepToolInput> {
     @Override
     public boolean isReadOnly(GrepToolInput input) {
         return true;
+    }
+
+    /**
+     * 判断文件是否疑似二进制：读取前 BINARY_SNIFF_BYTES 字节，若含 NUL(0x00) 则视为二进制。
+     * 该启发式与 git、ripgrep 等工具做法一致，对 UTF-16 文件会有误判，属可接受权衡。
+     */
+    private static boolean looksBinary(Path file) {
+        try (java.io.InputStream in = Files.newInputStream(file)) {
+            byte[] buf = new byte[BINARY_SNIFF_BYTES];
+            int read = in.read(buf);
+            for (int i = 0; i < read; i++) {
+                if (buf[i] == 0) {
+                    return true;
+                }
+            }
+            return false;
+        } catch (IOException e) {
+            // 读取失败时保守视为二进制（避免 visitor 中崩溃）
+            return true;
+        }
     }
 }

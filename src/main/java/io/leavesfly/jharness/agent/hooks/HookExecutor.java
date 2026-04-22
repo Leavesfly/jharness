@@ -77,10 +77,17 @@ public class HookExecutor {
 
     /**
      * 执行 Command Hook
+     *
+     * 安全策略（重要）：
+     * - Hook 命令模板本身由项目管理者在 hooks.json 中预先定义，视为可信；
+     * - Hook 的 payload（含 tool_name / prompt 等来自 LLM 的内容）仅通过环境变量
+     *   JHARNESS_ARGUMENTS / OPENHARNESS_HOOK_PAYLOAD 传递，绝不做字符串拼接；
+     * - 超时后先 destroy 再 destroyForcibly，避免子进程残留。
      */
     private HookResult runCommandHook(HookDefinition.CommandHookDefinition hook, HookEvent event, Map<String, Object> payload) {
         String command = injectArguments(hook.getCommand(), payload);
-        
+
+        Process process = null;
         try {
             ProcessBuilder pb;
             if (System.getProperty("os.name").toLowerCase().contains("win")) {
@@ -99,7 +106,7 @@ public class HookExecutor {
             pb.environment().put("JHARNESS_ARGUMENTS", MAPPER.writeValueAsString(payload));
             
             pb.redirectErrorStream(true);
-            Process process = pb.start();
+            process = pb.start();
 
             StringBuilder output = new StringBuilder();
             try (BufferedReader reader = new BufferedReader(
@@ -113,12 +120,7 @@ public class HookExecutor {
             boolean completed = process.waitFor(hook.getTimeoutSeconds(), java.util.concurrent.TimeUnit.SECONDS);
             
             if (!completed) {
-                process.destroyForcibly();
-                try {
-                    process.waitFor(2, java.util.concurrent.TimeUnit.SECONDS);
-                } catch (InterruptedException ie) {
-                    Thread.currentThread().interrupt();
-                }
+                destroyProcessGracefully(process);
                 return new HookResult(
                     hook.getType(), false, null,
                     hook.isBlockOnFailure(),
@@ -135,9 +137,36 @@ public class HookExecutor {
                 hook.isBlockOnFailure() && !success,
                 success ? null : (outputStr.isEmpty() ? String.format("Command hook failed with exit code %d", exitCode) : outputStr)
             );
-        } catch (IOException | InterruptedException e) {
+        } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
+            if (process != null && process.isAlive()) {
+                destroyProcessGracefully(process);
+            }
+            return new HookResult(hook.getType(), false, null, hook.isBlockOnFailure(), "Command hook interrupted");
+        } catch (IOException e) {
+            if (process != null && process.isAlive()) {
+                destroyProcessGracefully(process);
+            }
             return new HookResult(hook.getType(), false, null, hook.isBlockOnFailure(), e.getMessage());
+        }
+    }
+
+    /**
+     * 优雅销毁进程：先 destroy（SIGTERM），等 3s 无响应则 destroyForcibly（SIGKILL）。
+     */
+    private static void destroyProcessGracefully(Process process) {
+        if (process == null || !process.isAlive()) {
+            return;
+        }
+        process.destroy();
+        try {
+            if (!process.waitFor(3, java.util.concurrent.TimeUnit.SECONDS)) {
+                process.destroyForcibly();
+                process.waitFor(2, java.util.concurrent.TimeUnit.SECONDS);
+            }
+        } catch (InterruptedException ie) {
+            Thread.currentThread().interrupt();
+            process.destroyForcibly();
         }
     }
 
@@ -218,12 +247,7 @@ public class HookExecutor {
 
             boolean completed = process.waitFor(hook.getTimeoutSeconds(), java.util.concurrent.TimeUnit.SECONDS);
             if (!completed) {
-                process.destroyForcibly();
-                try {
-                    process.waitFor(2, java.util.concurrent.TimeUnit.SECONDS);
-                } catch (InterruptedException ie) {
-                    Thread.currentThread().interrupt();
-                }
+                destroyProcessGracefully(process);
                 return new HookResult(hook.getType(), false, null, hook.isBlockOnFailure(),
                         "Prompt hook timed out");
             }
@@ -280,12 +304,7 @@ public class HookExecutor {
 
             boolean completed = process.waitFor(hook.getTimeoutSeconds(), java.util.concurrent.TimeUnit.SECONDS);
             if (!completed) {
-                process.destroyForcibly();
-                try {
-                    process.waitFor(2, java.util.concurrent.TimeUnit.SECONDS);
-                } catch (InterruptedException ie) {
-                    Thread.currentThread().interrupt();
-                }
+                destroyProcessGracefully(process);
                 return new HookResult(hook.getType(), false, null, hook.isBlockOnFailure(),
                         "Agent hook timed out");
             }

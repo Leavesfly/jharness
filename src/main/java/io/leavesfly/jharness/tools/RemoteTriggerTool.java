@@ -79,6 +79,7 @@ public class RemoteTriggerTool extends BaseTool<RemoteTriggerToolInput> {
     private CompletableFuture<ToolResult> executeCommand(String command, String cwd, 
                                                           int timeoutSeconds, String jobName) {
         return CompletableFuture.supplyAsync(() -> {
+            Process process = null;
             try {
                 ProcessBuilder pb;
                 if (System.getProperty("os.name").toLowerCase().contains("win")) {
@@ -92,7 +93,7 @@ public class RemoteTriggerTool extends BaseTool<RemoteTriggerToolInput> {
                 }
 
                 pb.redirectErrorStream(true);
-                Process process = pb.start();
+                process = pb.start();
 
                 // 读取输出
                 StringBuilder output = new StringBuilder();
@@ -104,14 +105,18 @@ public class RemoteTriggerTool extends BaseTool<RemoteTriggerToolInput> {
                     }
                 }
 
-                // 等待完成，带超时
+                // 等待完成，带超时；超时后先 destroy，若仍存活则 destroyForcibly
                 boolean completed = process.waitFor(timeoutSeconds, TimeUnit.SECONDS);
-                
+
                 int exitCode;
                 if (completed) {
                     exitCode = process.exitValue();
                 } else {
-                    process.destroyForcibly();
+                    process.destroy();
+                    if (!process.waitFor(3, TimeUnit.SECONDS)) {
+                        process.destroyForcibly();
+                        process.waitFor(2, TimeUnit.SECONDS);
+                    }
                     return ToolResult.error(
                         String.format("Job '%s' timed out after %d seconds.\nOutput so far:\n%s",
                             jobName, timeoutSeconds, output.toString())
@@ -131,8 +136,16 @@ public class RemoteTriggerTool extends BaseTool<RemoteTriggerToolInput> {
                 } else {
                     return ToolResult.error(result);
                 }
-            } catch (IOException | InterruptedException e) {
+            } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
+                if (process != null && process.isAlive()) {
+                    process.destroyForcibly();
+                }
+                return ToolResult.error("Job '" + jobName + "' interrupted");
+            } catch (IOException e) {
+                if (process != null && process.isAlive()) {
+                    process.destroyForcibly();
+                }
                 return ToolResult.error("Failed to execute job '" + jobName + "': " + e.getMessage());
             }
         });

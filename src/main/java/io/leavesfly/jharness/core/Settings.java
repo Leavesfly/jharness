@@ -1,5 +1,6 @@
 package io.leavesfly.jharness.core;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.leavesfly.jharness.session.permissions.PermissionMode;
 
@@ -81,6 +82,11 @@ public class Settings {
         this.model = model;
     }
 
+    /**
+     * API Key 属于敏感凭据，禁止通过 toJson / save 持久化或回显（P2-M26）。
+     * 读取时使用 @JsonIgnore 防止在 log/toString/toJson 中泄漏。
+     */
+    @JsonIgnore
     public String getApiKey() {
         return apiKey;
     }
@@ -245,37 +251,89 @@ public class Settings {
         }
     }
 
+    /**
+     * 从默认配置文件加载设置。
+     *
+     * 合并策略（P1-L1）：
+     * - 先用无参构造器创建默认值 + 环境变量；
+     * - 再解析 JSON 为 JsonNode，仅当字段在 JSON 中显式存在时才覆盖默认值；
+     * - 对 primitive（int/boolean）字段同样基于 JsonNode.has() 判断是否存在，
+     *   避免 Jackson 默认 0 / false 覆盖掉合理默认值或环境变量带入的值。
+     */
     public static Settings load() {
         Settings settings = new Settings();
         Path configFile = DEFAULT_CONFIG_DIR.resolve("settings.json");
-        if (Files.exists(configFile)) {
-            try {
-                String json = Files.readString(configFile);
-                Settings loaded = MAPPER.readValue(json, Settings.class);
-                if (loaded.model != null) settings.model = loaded.model;
-                if (loaded.apiKey != null) settings.apiKey = loaded.apiKey;
-                if (loaded.baseUrl != null) settings.baseUrl = loaded.baseUrl;
-                if (loaded.permissionMode != null) settings.permissionMode = loaded.permissionMode;
-                if (loaded.theme != null) settings.theme = loaded.theme;
-                if (loaded.provider != null) settings.provider = loaded.provider;
-                if (loaded.allowedTools != null) settings.allowedTools = loaded.allowedTools;
-                if (loaded.deniedTools != null) settings.deniedTools = loaded.deniedTools;
-                if (loaded.mcpServers != null) settings.mcpServers = loaded.mcpServers;
-                if (loaded.enabledPlugins != null) settings.enabledPlugins = loaded.enabledPlugins;
-                // 补全遗漏的字段合并
-                settings.maxTokens = loaded.maxTokens;
-                settings.maxTurns = loaded.maxTurns;
-                if (loaded.effort != null) settings.effort = loaded.effort;
-                settings.passes = loaded.passes;
-                settings.vimEnabled = loaded.vimEnabled;
-                settings.voiceEnabled = loaded.voiceEnabled;
-                settings.fastMode = loaded.fastMode;
-                if (loaded.systemPrompt != null) settings.systemPrompt = loaded.systemPrompt;
-            } catch (Exception e) {
-                // 配置文件解析失败时使用默认值，但记录警告日志便于排查
-                System.err.println("[WARN] 配置文件解析失败，将使用默认值: " + e.getMessage()
-                        + " (配置文件路径: " + configFile + ")");
+        if (!Files.exists(configFile)) {
+            return settings;
+        }
+        try {
+            String json = Files.readString(configFile);
+            com.fasterxml.jackson.databind.JsonNode root = MAPPER.readTree(json);
+            if (!root.isObject()) {
+                System.err.println("[WARN] 配置文件根节点不是 JSON 对象，使用默认值: " + configFile);
+                return settings;
             }
+
+            // ===== 引用类型：非空即覆盖 =====
+            if (root.hasNonNull("model")) settings.model = root.get("model").asText();
+            if (root.hasNonNull("apiKey")) settings.apiKey = root.get("apiKey").asText();
+            if (root.hasNonNull("baseUrl")) settings.baseUrl = root.get("baseUrl").asText();
+            if (root.hasNonNull("theme")) settings.theme = root.get("theme").asText();
+            if (root.hasNonNull("provider")) settings.provider = root.get("provider").asText();
+            if (root.hasNonNull("effort")) settings.effort = root.get("effort").asText();
+            if (root.hasNonNull("systemPrompt")) settings.systemPrompt = root.get("systemPrompt").asText();
+
+            if (root.hasNonNull("permissionMode")) {
+                try {
+                    settings.permissionMode = PermissionMode.valueOf(
+                            root.get("permissionMode").asText().toUpperCase());
+                } catch (IllegalArgumentException iae) {
+                    System.err.println("[WARN] permissionMode 无效，保留默认: "
+                            + root.get("permissionMode").asText());
+                }
+            }
+
+            // ===== 集合类型：通过 ObjectMapper 反序列化 =====
+            if (root.hasNonNull("allowedTools")) {
+                settings.allowedTools = MAPPER.convertValue(root.get("allowedTools"),
+                        MAPPER.getTypeFactory().constructCollectionType(List.class, String.class));
+            }
+            if (root.hasNonNull("deniedTools")) {
+                settings.deniedTools = MAPPER.convertValue(root.get("deniedTools"),
+                        MAPPER.getTypeFactory().constructCollectionType(List.class, String.class));
+            }
+            if (root.hasNonNull("mcpServers")) {
+                settings.mcpServers = MAPPER.convertValue(root.get("mcpServers"),
+                        MAPPER.getTypeFactory().constructMapType(Map.class, String.class, Object.class));
+            }
+            if (root.hasNonNull("enabledPlugins")) {
+                settings.enabledPlugins = MAPPER.convertValue(root.get("enabledPlugins"),
+                        MAPPER.getTypeFactory().constructMapType(Map.class, String.class, Boolean.class));
+            }
+
+            // ===== primitive 字段：仅当 JSON 中显式存在时才覆盖 =====
+            if (root.has("maxTokens") && root.get("maxTokens").isInt()) {
+                settings.maxTokens = root.get("maxTokens").asInt();
+            }
+            if (root.has("maxTurns") && root.get("maxTurns").isInt()) {
+                settings.maxTurns = root.get("maxTurns").asInt();
+            }
+            if (root.has("passes") && root.get("passes").isInt()) {
+                settings.passes = root.get("passes").asInt();
+            }
+            if (root.has("vimEnabled") && root.get("vimEnabled").isBoolean()) {
+                settings.vimEnabled = root.get("vimEnabled").asBoolean();
+            }
+            if (root.has("voiceEnabled") && root.get("voiceEnabled").isBoolean()) {
+                settings.voiceEnabled = root.get("voiceEnabled").asBoolean();
+            }
+            if (root.has("fastMode") && root.get("fastMode").isBoolean()) {
+                settings.fastMode = root.get("fastMode").asBoolean();
+            }
+        } catch (Exception e) {
+            // 配置文件解析失败时使用默认值，但记录警告日志便于排查
+            System.err.println("[WARN] 配置文件解析失败，将使用默认值: " + e.getMessage()
+                    + " (配置文件路径: " + configFile + ")");
         }
         return settings;
     }

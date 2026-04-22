@@ -78,8 +78,9 @@ public class TerminalUI {
             mainLoop();
 
         } catch (IOException e) {
+            // P2-Mn14：用日志替代 printStackTrace，保证日志系统能统一采集到
+            logger.error("启动 TUI 失败: {}", e.getMessage(), e);
             System.err.println("启动 TUI 失败: " + e.getMessage());
-            e.printStackTrace();
         } finally {
             stop();
         }

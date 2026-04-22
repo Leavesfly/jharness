@@ -80,12 +80,25 @@ public class RetryPolicy {
                 if (attempt > 0) {
                     long delayMs = getDelayMs(attempt - 1);
                     logger.debug("重试第 {} 次，等待 {} ms", attempt, delayMs);
-                    Thread.sleep(delayMs);
+                    try {
+                        Thread.sleep(delayMs);
+                    } catch (InterruptedException ie) {
+                        // P2-M7：恢复中断位并立即终止重试
+                        Thread.currentThread().interrupt();
+                        throw new InterruptedException("重试等待期间被中断");
+                    }
                 }
                 return operation.get();
+            } catch (InterruptedException ie) {
+                // 向上抛出中断异常，让调用方决定是否处理
+                throw ie;
             } catch (Exception e) {
                 lastException = e;
                 logger.warn("尝试 {} 失败: {}", attempt + 1, e.getMessage());
+                // P2-M7：若异常策略认为不应重试，立即抛出，不要再循环
+                if (!shouldRetry(attempt, e)) {
+                    break;
+                }
             }
         }
 

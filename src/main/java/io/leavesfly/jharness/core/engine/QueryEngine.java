@@ -84,15 +84,17 @@ public class QueryEngine implements AutoCloseable {
     /**
      * 提交消息并执行查询
      *
+     * 使用 messageLock 保护对 messages 的写入，避免与 loadMessages/clear/getMessages 以及
+     * runQuery 中的压缩逻辑产生数据竞争。
+     *
      * @param prompt        用户提示
      * @param eventConsumer 事件消费者
      * @return 执行完成的 Future
      */
     public CompletableFuture<Void> submitMessage(String prompt, Consumer<StreamEvent> eventConsumer) {
-        // 添加用户消息
-        messages.add(ConversationMessage.userText(prompt));
-
-        // 执行查询循环
+        synchronized (messageLock) {
+            messages.add(ConversationMessage.userText(prompt));
+        }
         return runQuery(eventConsumer);
     }
 
@@ -163,9 +165,13 @@ public class QueryEngine implements AutoCloseable {
                         }
                     }
 
-                    // 调用 API（传递工具定义）
+                    // 调用 API（传递工具定义）- 传入快照避免在 API 调用过程中被并发修改
+                    List<ConversationMessage> snapshot;
+                    synchronized (messageLock) {
+                        snapshot = new ArrayList<>(messages);
+                    }
                     ApiMessageCompleteEvent response = apiClient.streamMessage(
-                            messages, systemPrompt, toolRegistry.toApiSchema(), eventConsumer).join();
+                            snapshot, systemPrompt, toolRegistry.toApiSchema(), eventConsumer).join();
 
                     // 记录使用量
                     costTracker.addUsage(response.getUsage());
@@ -189,7 +195,9 @@ public class QueryEngine implements AutoCloseable {
                     assistantContent.addAll(toolUses);
                     ConversationMessage assistantMsg = new ConversationMessage(
                             MessageRole.ASSISTANT, assistantContent);
-                    messages.add(assistantMsg);
+                    synchronized (messageLock) {
+                        messages.add(assistantMsg);
+                    }
 
                     // 执行工具
                     List<ToolResultBlock> results = executeTools(toolUses, eventConsumer);
@@ -197,10 +205,14 @@ public class QueryEngine implements AutoCloseable {
                     // 添加工具结果消息
                     ConversationMessage resultMsg = new ConversationMessage(
                             MessageRole.USER, new ArrayList<>(results));
-                    messages.add(resultMsg);
+                    synchronized (messageLock) {
+                        messages.add(resultMsg);
+                    }
                 }
 
+                // P2-M17：达到最大轮次时通过事件通知上层，避免用户误以为是模型正常结束
                 logger.warn("达到最大轮次限制 ({})", maxTurns);
+                eventConsumer.accept(new io.leavesfly.jharness.core.engine.stream.AssistantTurnComplete());
             } catch (Exception e) {
                 logger.error("查询执行失败", e);
                 throw new RuntimeException("查询执行失败", e);
@@ -216,7 +228,16 @@ public class QueryEngine implements AutoCloseable {
             // 单个工具：顺序执行
             ToolUseBlock toolUse = toolUses.get(0);
             eventConsumer.accept(new ToolExecutionStarted(toolUse.getName(), toolUse.getId()));
-            ToolResult result = executeToolCall(toolUse).join();
+            ToolResult result;
+            try {
+                result = executeToolCall(toolUse).join();
+            } catch (java.util.concurrent.CancellationException ce) {
+                result = ToolResult.error("工具执行被取消");
+            } catch (java.util.concurrent.CompletionException ex) {
+                Throwable cause = ex.getCause() != null ? ex.getCause() : ex;
+                logger.error("工具执行异常: {}", toolUse.getName(), cause);
+                result = ToolResult.error("工具执行异常: " + cause.getMessage());
+            }
             eventConsumer.accept(new ToolExecutionCompleted(
                     toolUse.getName(), toolUse.getId(), result.getOutput(), result.isError()));
             return List.of(result.toBlock(toolUse.getId()));
@@ -257,13 +278,26 @@ public class QueryEngine implements AutoCloseable {
                 Thread.currentThread().interrupt();
                 logger.error("工具并行执行被中断");
                 futures.forEach(f -> f.cancel(true));
+            } catch (java.util.concurrent.CancellationException e) {
+                // 当 future 已被外层取消时，allOf 可能直接抛出 CancellationException；
+                // 此时继续往下走，让每个 future 各自上报错误结果，不影响模型侧的 tool_result 配对。
+                logger.warn("工具并行执行被取消: {}", e.getMessage());
             }
 
             // 收集结果（此时所有 Future 已完成，join() 不会阻塞）
             List<ToolResultBlock> results = new ArrayList<>();
             for (int i = 0; i < toolUses.size(); i++) {
-                ToolResult result = futures.get(i).getNow(ToolResult.error("工具执行失败"));
-                results.add(result.toBlock(toolUses.get(i).getId()));
+                ToolUseBlock toolUse = toolUses.get(i);
+                CompletableFuture<ToolResult> future = futures.get(i);
+                ToolResult result;
+                try {
+                    result = future.getNow(ToolResult.error("工具执行失败"));
+                } catch (java.util.concurrent.CancellationException ce) {
+                    result = ToolResult.error("工具执行被取消");
+                } catch (Exception ex) {
+                    result = ToolResult.error("工具执行异常: " + ex.getMessage());
+                }
+                results.add(result.toBlock(toolUse.getId()));
             }
             return results;
         }
@@ -291,9 +325,14 @@ public class QueryEngine implements AutoCloseable {
                         extractCommand(toolUse.getInput())
                 );
 
+                // P2-M16：空校验——防御性编程，避免 PermissionChecker 实现变更后返回 null 导致 NPE
+                if (decision == null) {
+                    logger.error("权限检查器返回 null 决策，默认拒绝: {}", tool.getName());
+                    return ToolResult.error("权限检查异常: 决策为空");
+                }
                 if (!decision.isAllowed()) {
                     if (decision.isRequiresConfirmation()) {
-                        // 需要用户确认（简化处理：默认允许）
+                        // 需要用户确认（当前实现默认允许，留待后续接入交互式确认）
                         logger.debug("工具 {} 需要用户确认，默认允许", tool.getName());
                     } else {
                         return ToolResult.error("权限拒绝: " + decision.getReason());

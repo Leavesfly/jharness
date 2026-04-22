@@ -207,9 +207,15 @@ public class LspTool extends BaseTool<LspToolInput> {
 
     // ====== 符号提取逻辑 ======
 
+    /**
+     * 单文件最大处理行数。
+     * 超过此阈值的文件只处理前 N 行，防止超大生成文件导致 OOM。
+     */
+    private static final int MAX_FILE_LINES = 50_000;
+
     private List<Map<String, Object>> extractDocumentSymbols(Path filePath) throws IOException {
         List<Map<String, Object>> symbols = new ArrayList<>();
-        List<String> lines = Files.readAllLines(filePath);
+        List<String> lines = readFileLinesSafely(filePath);
         String fileName = filePath.getFileName().toString();
 
         if (fileName.endsWith(".java")) {
@@ -221,6 +227,22 @@ public class LspTool extends BaseTool<LspToolInput> {
         }
 
         return symbols;
+    }
+
+    /**
+     * 以流式方式读取文件行，避免对大文件一次性 readAllBytes 导致 OOM。
+     * 超过 MAX_FILE_LINES 的部分会被截断并记录 debug 日志。
+     */
+    private static List<String> readFileLinesSafely(Path filePath) throws IOException {
+        try (Stream<String> stream = Files.lines(filePath, java.nio.charset.StandardCharsets.UTF_8)) {
+            return stream.limit(MAX_FILE_LINES).collect(Collectors.toList());
+        } catch (java.nio.charset.MalformedInputException mie) {
+            // 非 UTF-8 文件降级到默认字符集，避免完全失败
+            logger.debug("文件非 UTF-8 编码，降级读取: {}", filePath);
+            try (Stream<String> stream = Files.lines(filePath)) {
+                return stream.limit(MAX_FILE_LINES).collect(Collectors.toList());
+            }
+        }
     }
 
     private void extractJavaSymbols(List<String> lines, List<Map<String, Object>> symbols) {

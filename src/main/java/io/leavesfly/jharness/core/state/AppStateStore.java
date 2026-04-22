@@ -48,20 +48,26 @@ public class AppStateStore {
     }
     
     /**
-     * 通知所有监听器，移除持续抛异常的监听器
+     * 通知所有监听器，移除持续抛异常的监听器。
+     *
+     * 调用前置条件：当前线程已持有 AppStateStore 锁（由 set() 保证）。
+     * 为了避免监听器回调中反向调用 set/subscribe 造成死锁或 ConcurrentModification，
+     * 这里先在持锁状态下拷贝出快照，再在快照上遍历调用；对失败监听器的移除仍然在锁内完成。
      */
     private void notifyListeners() {
-        // 创建副本以避免并发修改问题
+        assert Thread.holdsLock(this) : "notifyListeners 必须在持有 AppStateStore 锁时调用";
+        // 拷贝快照和当前状态，避免监听器反向修改导致并发问题
         List<Listener> snapshot = new ArrayList<>(listeners);
+        AppState snapshotState = state;
+
         List<Listener> failedListeners = new ArrayList<>();
         for (Listener listener : snapshot) {
             try {
-                listener.accept(state);
+                listener.accept(snapshotState);
             } catch (Exception e) {
                 failedListeners.add(listener);
             }
         }
-        // 移除异常的监听器，防止性能下降
         if (!failedListeners.isEmpty()) {
             listeners.removeAll(failedListeners);
         }

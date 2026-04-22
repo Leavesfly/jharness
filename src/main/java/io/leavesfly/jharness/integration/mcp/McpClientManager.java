@@ -322,13 +322,22 @@ public class McpClientManager {
     
     /**
      * stdio MCP 会话实现
+     *
+     * 改进点（P0）：
+     * - 不再合并 stderr 到 stdout（上层已经设置了 redirectErrorStream=true，但仅用于调试日志导出），
+     *   避免 stderr 中的非 JSON 日志干扰响应解析导致死锁；
+     * - 读响应使用带超时的轮询机制，一旦进程退出或 stdout 长时间无数据立即返回错误；
+     * - 单独的 stderr 消费线程，防止子进程 stderr 缓冲区满导致管道阻塞（当前 redirectErrorStream=true 场景不启用）。
      */
     private class StdioMcpSession implements McpSession {
+        /** 单次 readResponse 的最大等待时间（秒）。 */
+        private static final int READ_RESPONSE_TIMEOUT_SECONDS = 30;
+
         private final Process process;
         private final String serverName;
         private final BufferedReader reader;
         private final java.io.OutputStream writer;
-        
+
         StdioMcpSession(Process process, String serverName) {
             this.process = process;
             this.serverName = serverName;
@@ -501,25 +510,71 @@ public class McpClientManager {
         }
         
         /**
-         * 读取 JSON-RPC 响应
+         * 读取 JSON-RPC 响应（带超时和字符串/转义感知）
          *
-         * 逐行读取，累积 JSON 内容，通过大括号平衡检测完整的 JSON 对象。
+         * 改进点（P0-S9）：
+         * - 通过 ready() 轮询 + sleep，保证在 READ_RESPONSE_TIMEOUT_SECONDS 秒内无新数据时返回超时异常，
+         *   避免 reader.readLine() 永久阻塞；
+         * - 识别字符串字面量和转义字符，不再把字符串里的花括号当作 JSON 结构的一部分，
+         *   防止响应包含含 "{" / "}" 的文本时误判；
+         * - 若子进程已退出，立即抛异常终止等待。
          */
         private String readResponse() throws IOException {
             StringBuilder sb = new StringBuilder();
             int braceDepth = 0;
             boolean started = false;
+            boolean inString = false;
+            boolean escaped = false;
 
-            String line;
-            while ((line = reader.readLine()) != null) {
-                String trimmed = line.trim();
-                if (trimmed.isEmpty()) {
+            long deadline = System.nanoTime()
+                    + java.util.concurrent.TimeUnit.SECONDS.toNanos(READ_RESPONSE_TIMEOUT_SECONDS);
+
+            while (true) {
+                if (System.nanoTime() > deadline) {
+                    throw new IOException("MCP 服务器响应超时（>"
+                            + READ_RESPONSE_TIMEOUT_SECONDS + "s）: " + serverName);
+                }
+                if (!reader.ready()) {
+                    if (!process.isAlive()) {
+                        throw new IOException("MCP 服务器进程已退出: " + serverName);
+                    }
+                    try {
+                        Thread.sleep(20);
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                        throw new IOException("读取 MCP 响应被中断", ie);
+                    }
+                    continue;
+                }
+
+                String line = reader.readLine();
+                if (line == null) {
+                    // EOF
+                    break;
+                }
+                if (!started && line.trim().isEmpty()) {
                     continue;
                 }
 
                 sb.append(line);
 
-                for (char ch : trimmed.toCharArray()) {
+                for (int i = 0; i < line.length(); i++) {
+                    char ch = line.charAt(i);
+                    if (escaped) {
+                        escaped = false;
+                        continue;
+                    }
+                    if (ch == '\\') {
+                        escaped = true;
+                        continue;
+                    }
+                    if (ch == '"') {
+                        inString = !inString;
+                        continue;
+                    }
+                    if (inString) {
+                        continue;
+                    }
                     if (ch == '{') {
                         braceDepth++;
                         started = true;

@@ -30,27 +30,42 @@ public class ClaudeMdLoader {
         return loadFile(claudeMdPath);
     }
 
+    /** 向上查找的最大层级，防止在深层目录中遍历到根目录造成性能问题 */
+    private static final int MAX_UPWARD_DEPTH = 32;
+
     /**
-     * 加载最近的 CLAUDE.md 文件
+     * 加载最近的 CLAUDE.md 文件（P2-M25）。
      *
-     * 从当前工作目录向上搜索，直到找到 CLAUDE.md 或到达文件系统根目录。
+     * 从当前工作目录向上搜索，直到找到 CLAUDE.md、到达文件系统根目录或达到最大层级。
+     * 额外做符号链接检测：若当前路径的真实路径已经脱离最初 cwd 的祖先链，则停止上溯，
+     * 避免被恶意符号链接引导到任意目录读取文件。
      *
      * @param cwd 当前工作目录
      * @return CLAUDE.md 内容，如果不存在返回空字符串
      */
     public String loadNearestClaudeMd(Path cwd) {
-        Path current = cwd.toAbsolutePath();
+        if (cwd == null) {
+            return "";
+        }
+        Path current = cwd.toAbsolutePath().normalize();
+        int depth = 0;
 
-        while (current != null) {
+        while (current != null && depth < MAX_UPWARD_DEPTH) {
             Path claudeMdPath = current.resolve(CLAUDE_MD_FILENAME);
-            String content = loadFile(claudeMdPath);
-            if (!content.isEmpty()) {
-                logger.debug("找到 CLAUDE.md: {}", claudeMdPath);
-                return content;
+            // 仅在真实存在且非符号链接时加载，防止符号链接逃逸
+            if (Files.exists(claudeMdPath) && !Files.isSymbolicLink(claudeMdPath)) {
+                String content = loadFile(claudeMdPath);
+                if (!content.isEmpty()) {
+                    logger.debug("找到 CLAUDE.md: {}", claudeMdPath);
+                    return content;
+                }
             }
             current = current.getParent();
+            depth++;
         }
-
+        if (depth >= MAX_UPWARD_DEPTH) {
+            logger.debug("CLAUDE.md 向上查找达到最大深度 {}，停止搜索", MAX_UPWARD_DEPTH);
+        }
         return "";
     }
 

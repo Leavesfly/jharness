@@ -185,16 +185,41 @@ public class CronRegistry {
     }
 
     /**
-     * 保存作业列表
+     * 保存作业列表（原子写）
+     *
+     * 写入策略：先写临时文件，再用 ATOMIC_MOVE 原子替换目标文件。
+     * 防止进程崩溃/断电导致目标文件被截断或损坏。
      */
     private void saveJobs() {
+        Path tempPath = null;
         try {
             Files.createDirectories(registryPath.getParent());
             String content = MAPPER.writerWithDefaultPrettyPrinter().writeValueAsString(jobs);
-            Files.writeString(registryPath, content);
+
+            tempPath = Files.createTempFile(
+                    registryPath.getParent(), "cron_jobs", ".json.tmp");
+            Files.writeString(tempPath, content);
+            try {
+                Files.move(tempPath, registryPath,
+                        java.nio.file.StandardCopyOption.ATOMIC_MOVE,
+                        java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+            } catch (java.nio.file.AtomicMoveNotSupportedException amnse) {
+                // 某些文件系统（如跨挂载点）不支持原子移动，降级为 REPLACE_EXISTING
+                logger.debug("文件系统不支持 ATOMIC_MOVE，降级使用 REPLACE_EXISTING");
+                Files.move(tempPath, registryPath,
+                        java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+            }
             logger.debug("已保存 {} 个 cron 作业", jobs.size());
         } catch (IOException e) {
             logger.error("保存 cron 作业失败", e);
+            // 清理遗留的临时文件，避免目录污染
+            if (tempPath != null) {
+                try {
+                    Files.deleteIfExists(tempPath);
+                } catch (IOException cleanup) {
+                    logger.debug("清理临时文件失败: {}", cleanup.getMessage());
+                }
+            }
         }
     }
 

@@ -14,24 +14,44 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * 后台任务管理器
  *
  * 管理后台进程任务的生命周期。
+ *
+ * 改进点（P2-M3）：
+ * - 实现 AutoCloseable，允许调用方用 try-with-resources 自动关闭；
+ * - 使用命名 ThreadFactory，daemon=false，便于在日志和线程 dump 中定位；
+ * - shutdown 幂等，重复调用不会抛异常。
  */
-public class BackgroundTaskManager {
+public class BackgroundTaskManager implements AutoCloseable {
     private static final Logger logger = LoggerFactory.getLogger(BackgroundTaskManager.class);
 
     private static final int MAX_THREAD_POOL_SIZE = 20;
 
     private final Map<String, TaskRecord> tasks = new ConcurrentHashMap<>();
     private final Map<String, Process> processes = new ConcurrentHashMap<>();
-    private final ExecutorService executor = Executors.newFixedThreadPool(MAX_THREAD_POOL_SIZE);
+    private final ExecutorService executor;
     private final Path outputDir;
+    private volatile boolean closed = false;
 
     public BackgroundTaskManager(Path outputDir) {
         this.outputDir = outputDir;
+        this.executor = Executors.newFixedThreadPool(MAX_THREAD_POOL_SIZE, new ThreadFactory() {
+            private final AtomicInteger counter = new AtomicInteger(0);
+
+            @Override
+            public Thread newThread(Runnable r) {
+                Thread t = new Thread(r, "jharness-bg-task-" + counter.incrementAndGet());
+                t.setDaemon(false);
+                t.setUncaughtExceptionHandler((thread, ex) ->
+                        logger.error("后台任务线程未捕获异常: {}", thread.getName(), ex));
+                return t;
+            }
+        });
         try {
             Files.createDirectories(outputDir);
         } catch (IOException e) {
@@ -138,9 +158,13 @@ public class BackgroundTaskManager {
     }
 
     /**
-     * 关闭任务管理器，终止所有运行中的进程并关闭线程池
+     * 关闭任务管理器，终止所有运行中的进程并关闭线程池（幂等，P2-M3）。
      */
-    public void shutdown() {
+    public synchronized void shutdown() {
+        if (closed) {
+            return;
+        }
+        closed = true;
         for (Map.Entry<String, Process> entry : processes.entrySet()) {
             Process process = entry.getValue();
             if (process != null && process.isAlive()) {
@@ -153,11 +177,20 @@ public class BackgroundTaskManager {
         try {
             if (!executor.awaitTermination(5, java.util.concurrent.TimeUnit.SECONDS)) {
                 executor.shutdownNow();
+                if (!executor.awaitTermination(3, java.util.concurrent.TimeUnit.SECONDS)) {
+                    logger.warn("任务线程池强制关闭后仍未结束");
+                }
             }
         } catch (InterruptedException e) {
             executor.shutdownNow();
             Thread.currentThread().interrupt();
         }
+    }
+
+    /** AutoCloseable 实现（P2-M3）：委托给 shutdown，使得 try-with-resources 能优雅关闭。 */
+    @Override
+    public void close() {
+        shutdown();
     }
 
     /**
@@ -232,7 +265,7 @@ public class BackgroundTaskManager {
     }
 
     /**
-     * 写入任务 stdin
+     * 写入任务 stdin（P2 顺带修复：使用 UTF-8，避免平台默认字符集导致乱码）。
      */
     public boolean writeToTask(String taskId, String message) {
         Process process = processes.get(taskId);
@@ -242,7 +275,7 @@ public class BackgroundTaskManager {
 
         try {
             OutputStream stdin = process.getOutputStream();
-            stdin.write((message + "\n").getBytes());
+            stdin.write((message + "\n").getBytes(java.nio.charset.StandardCharsets.UTF_8));
             stdin.flush();
             return true;
         } catch (IOException e) {
