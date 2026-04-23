@@ -40,4 +40,21 @@ public class BashToolInput {
     public void setDescription(String description) {
         this.description = description;
     }
+
+    /**
+     * 持久 shell 会话标识（F-P1-5）。
+     *
+     * 为空时每次命令都使用一次性 ProcessBuilder 进程（与旧行为兼容）；
+     * 非空时会把命令发送到对应 {@code sessionId} 的长驻 bash 会话中，
+     * 跨命令共享环境变量、工作目录、shell 别名等上下文。
+     */
+    private String session_id;
+
+    public String getSession_id() {
+        return session_id;
+    }
+
+    public void setSession_id(String session_id) {
+        this.session_id = session_id;
+    }
 }

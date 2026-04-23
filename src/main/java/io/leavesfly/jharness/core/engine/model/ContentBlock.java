@@ -12,6 +12,7 @@ import com.fasterxml.jackson.annotation.JsonTypeInfo;
 @JsonTypeInfo(use = JsonTypeInfo.Id.NAME, include = JsonTypeInfo.As.PROPERTY, property = "type")
 @JsonSubTypes({
     @JsonSubTypes.Type(value = TextBlock.class, name = "text"),
+    @JsonSubTypes.Type(value = ImageBlock.class, name = "image"),
     @JsonSubTypes.Type(value = ToolUseBlock.class, name = "tool_use"),
     @JsonSubTypes.Type(value = ToolResultBlock.class, name = "tool_result")
 })

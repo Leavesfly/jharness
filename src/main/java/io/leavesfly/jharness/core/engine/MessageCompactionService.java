@@ -13,52 +13,86 @@ import java.util.List;
  *
  * 当对话历史过长时，压缩早期消息以节省 Token。
  * 策略：保留最新 N 条消息，将早期消息压缩为摘要。
+ *
+ * F-P0-2 升级：支持基于 token 总量的触发（优先于条数阈值）。
+ * - 若设置 maxTokenBudget（&gt;0），当估算总 token 超过该值时触发压缩；
+ * - 条数阈值仍保留作为兜底，避免即使 token 少但消息太多也会带来响应延迟。
  */
 public class MessageCompactionService {
 
     private static final int DEFAULT_MAX_MESSAGES = 20;
     private static final int DEFAULT_SUMMARY_MESSAGES = 5;
+    /** 默认 token 预算：大多数模型上下文在 8k-128k，取 32k 作为安全的压缩触发阈值。 */
+    private static final int DEFAULT_MAX_TOKEN_BUDGET = 32_000;
 
     private final int maxMessages;
     private final int summaryMessages;
+    private final int maxTokenBudget;
 
     public MessageCompactionService() {
-        this(DEFAULT_MAX_MESSAGES, DEFAULT_SUMMARY_MESSAGES);
+        this(DEFAULT_MAX_MESSAGES, DEFAULT_SUMMARY_MESSAGES, DEFAULT_MAX_TOKEN_BUDGET);
     }
 
     public MessageCompactionService(int maxMessages, int summaryMessages) {
+        this(maxMessages, summaryMessages, DEFAULT_MAX_TOKEN_BUDGET);
+    }
+
+    public MessageCompactionService(int maxMessages, int summaryMessages, int maxTokenBudget) {
         this.maxMessages = maxMessages;
         this.summaryMessages = summaryMessages;
+        this.maxTokenBudget = maxTokenBudget;
     }
 
     /**
-     * 压缩消息列表
+     * 压缩消息列表。
+     *
+     * F-P0-2 升级：如果仅按条数压缩后 token 仍超预算，则继续迭代压缩，
+     * 每轮将"保留条数"减半直到满足预算或仅剩 2 条（保留摘要 + 最新一条用户消息）。
      *
      * @param messages 原始消息列表
      * @return 压缩后的消息列表
      */
     public List<ConversationMessage> compact(List<ConversationMessage> messages) {
-        if (messages.size() <= maxMessages) {
+        if (messages == null || messages.isEmpty()) {
+            return new ArrayList<>();
+        }
+
+        // 第一次：按条数压缩
+        List<ConversationMessage> result = compactByCount(messages, maxMessages);
+
+        // 若设置了 token 预算且仍超限，则按 token 预算迭代收紧保留条数
+        if (maxTokenBudget > 0) {
+            int keep = Math.max(maxMessages, 2);
+            while (TokenEstimator.estimateMessages(result) > maxTokenBudget && keep > 2) {
+                keep = Math.max(2, keep / 2);
+                result = compactByCount(messages, keep);
+            }
+        }
+
+        return result;
+    }
+
+    /**
+     * 按"保留最新 targetKeep 条 + 1 条摘要"的策略压缩。
+     */
+    private List<ConversationMessage> compactByCount(List<ConversationMessage> messages, int targetKeep) {
+        if (messages.size() <= targetKeep) {
             return new ArrayList<>(messages);
         }
 
         List<ConversationMessage> result = new ArrayList<>();
 
-        // 计算需要保留的早期消息数量
-        int earlyCount = Math.min(summaryMessages, messages.size() - maxMessages + 1);
-        int keepFromEnd = maxMessages - 1; // -1 为摘要消息预留空间
+        int earlyCount = Math.min(summaryMessages, messages.size() - targetKeep + 1);
+        int keepFromEnd = Math.min(Math.max(targetKeep - 1, 1), messages.size() - 1);
 
-        // 确保 keepFromEnd 不超过消息总数
-        keepFromEnd = Math.min(keepFromEnd, messages.size() - 1);
-
-        // 创建摘要（使用 USER 角色，因为 MessageRole 不包含 SYSTEM）
         List<ConversationMessage> earlyMessages = messages.subList(0, earlyCount);
         String summary = createSummary(earlyMessages);
-        ConversationMessage summaryMsg = new ConversationMessage(MessageRole.USER, List.of(new TextBlock("[对话摘要] " + summary)));
+        ConversationMessage summaryMsg = new ConversationMessage(
+                MessageRole.USER, List.of(new TextBlock("[对话摘要] " + summary)));
         result.add(summaryMsg);
 
-        // 保留最新的消息
-        List<ConversationMessage> recentMessages = messages.subList(messages.size() - keepFromEnd, messages.size());
+        List<ConversationMessage> recentMessages = messages.subList(
+                messages.size() - keepFromEnd, messages.size());
         result.addAll(recentMessages);
 
         return result;
@@ -105,9 +139,24 @@ public class MessageCompactionService {
     }
 
     /**
-     * 判断是否需要压缩
+     * 判断是否需要压缩（F-P0-2：条数 OR token 预算 任一超限即触发）。
      */
     public boolean needsCompaction(List<ConversationMessage> messages) {
-        return messages.size() > maxMessages;
+        if (messages == null || messages.isEmpty()) {
+            return false;
+        }
+        if (messages.size() > maxMessages) {
+            return true;
+        }
+        if (maxTokenBudget > 0) {
+            int estimated = TokenEstimator.estimateMessages(messages);
+            return estimated > maxTokenBudget;
+        }
+        return false;
+    }
+
+    /** 暴露当前配置的 token 预算，供日志和 UI 展示。 */
+    public int getMaxTokenBudget() {
+        return maxTokenBudget;
     }
 }

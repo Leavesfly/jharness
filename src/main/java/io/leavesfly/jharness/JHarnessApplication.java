@@ -16,6 +16,8 @@ import io.leavesfly.jharness.prompts.SystemPromptBuilder;
 import io.leavesfly.jharness.integration.CronRegistry;
 import io.leavesfly.jharness.extension.skills.SkillRegistry;
 import io.leavesfly.jharness.agent.tasks.BackgroundTaskManager;
+import io.leavesfly.jharness.tools.AgentTool;
+import io.leavesfly.jharness.tools.BaseTool;
 import io.leavesfly.jharness.tools.ToolRegistry;
 import io.leavesfly.jharness.command.commands.CommandRegistry;
 import io.leavesfly.jharness.ui.tui.ConsoleInteractiveSession;
@@ -189,8 +191,20 @@ public class JHarnessApplication implements Callable<Integer> {
                 "你是 JHarness，一个强大的 AI 编程助手。你可以使用工具来帮助用户完成各种任务。")
                 .build();
 
-        return new QueryEngine(apiClient, toolRegistry, permissionChecker,
+        QueryEngine engine = new QueryEngine(apiClient, toolRegistry, permissionChecker,
                 cwd, systemPrompt, settings.getMaxTurns());
+
+        // F-P0-5：把当前模型名注入 CostTracker，让价格表查询生效
+        engine.getCostTracker().setModelName(settings.getModel());
+
+        // F-P1-1：为 AgentTool 注入共享资源，启用 in_process 模式
+        BaseTool<?> agentRaw = toolRegistry.get("agent_spawn");
+        if (agentRaw instanceof AgentTool agentTool) {
+            agentTool.configureInProcess(apiClient, toolRegistry, permissionChecker);
+            logger.info("AgentTool in_process 模式已配置");
+        }
+
+        return engine;
     }
 
     /**

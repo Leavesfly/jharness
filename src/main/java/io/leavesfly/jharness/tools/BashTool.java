@@ -1,6 +1,8 @@
 package io.leavesfly.jharness.tools;
 
 import io.leavesfly.jharness.tools.input.BashToolInput;
+import io.leavesfly.jharness.tools.shell.ShellSession;
+import io.leavesfly.jharness.tools.shell.ShellSessionManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -93,41 +95,15 @@ public class BashTool extends BaseTool<BashToolInput> {
                     return ToolResult.error("安全限制: 命令长度超过限制 (最大 10000 字符)");
                 }
 
-                logger.debug("执行命令: {}", command);
+                logger.debug("执行命令: {} (session={})", command, input.getSession_id());
 
-                ProcessBuilder pb = new ProcessBuilder("bash", "-c", command);
-                pb.directory(context.getCwd().toFile());
-                pb.redirectErrorStream(true);
-
-                Process process = pb.start();
-
-                // 读取输出
-                StringBuilder output = new StringBuilder();
-                try (BufferedReader reader = new BufferedReader(
-                        new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
-                    String line;
-                    while ((line = reader.readLine()) != null) {
-                        output.append(line).append("\n");
-                    }
+                // F-P1-5：若指定了 session_id，则走持久会话路径
+                if (input.getSession_id() != null && !input.getSession_id().isBlank()) {
+                    return runInSession(input, context);
                 }
 
-                // 等待完成（带超时）
-                boolean finished = process.waitFor(input.getTimeout(), TimeUnit.SECONDS);
-                if (!finished) {
-                    process.destroyForcibly();
-                    return ToolResult.error("命令执行超时 (" + input.getTimeout() + "秒)");
-                }
-
-                int exitCode = process.exitValue();
-                String result = output.toString();
-
-                // 截断过长输出
-                if (result.length() > MAX_OUTPUT_LENGTH) {
-                    result = result.substring(0, MAX_OUTPUT_LENGTH) + "\n...(输出已截断)";
-                }
-
-                String finalResult = String.format("退出码: %d\n输出:\n%s", exitCode, result);
-                return new ToolResult(finalResult, exitCode != 0);
+                // 旧路径：一次性进程
+                return runOneShot(input, context);
 
             } catch (IOException | InterruptedException e) {
                 logger.error("命令执行失败", e);
@@ -135,6 +111,72 @@ public class BashTool extends BaseTool<BashToolInput> {
                 return ToolResult.error("命令执行失败: " + e.getMessage());
             }
         });
+    }
+
+    /**
+     * 一次性进程模式：每次命令独立进程，环境不共享。
+     */
+    private ToolResult runOneShot(BashToolInput input, ToolExecutionContext context)
+            throws IOException, InterruptedException {
+        String command = input.getCommand();
+        ProcessBuilder pb = new ProcessBuilder("bash", "-c", command);
+        pb.directory(context.getCwd().toFile());
+        pb.redirectErrorStream(true);
+
+        Process process = pb.start();
+
+        StringBuilder output = new StringBuilder();
+        try (BufferedReader reader = new BufferedReader(
+                new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                output.append(line).append("\n");
+            }
+        }
+
+        boolean finished = process.waitFor(input.getTimeout(), TimeUnit.SECONDS);
+        if (!finished) {
+            process.destroyForcibly();
+            return ToolResult.error("命令执行超时 (" + input.getTimeout() + "秒)");
+        }
+
+        int exitCode = process.exitValue();
+        String result = truncateOutput(output.toString());
+        return new ToolResult(
+                String.format("退出码: %d\n输出:\n%s", exitCode, result),
+                exitCode != 0);
+    }
+
+    /**
+     * 持久会话模式（F-P1-5）：复用同一个长驻 bash 进程。
+     */
+    private ToolResult runInSession(BashToolInput input, ToolExecutionContext context) throws IOException {
+        ShellSession session = ShellSessionManager.getInstance()
+                .getOrCreate(input.getSession_id(), context.getCwd());
+        ShellSession.Result result;
+        try {
+            result = session.run(input.getCommand(), input.getTimeout());
+        } catch (InterruptedException ie) {
+            Thread.currentThread().interrupt();
+            return ToolResult.error("命令执行被中断");
+        }
+        if (result.timedOut()) {
+            return ToolResult.error(String.format(
+                    "命令在 session=%s 中执行超时 (%d 秒)，会话已自动关闭",
+                    input.getSession_id(), input.getTimeout()));
+        }
+        String out = truncateOutput(result.output());
+        return new ToolResult(
+                String.format("[session=%s] 退出码: %d\n输出:\n%s",
+                        input.getSession_id(), result.exitCode(), out),
+                result.exitCode() != 0);
+    }
+
+    private static String truncateOutput(String output) {
+        if (output.length() > MAX_OUTPUT_LENGTH) {
+            return output.substring(0, MAX_OUTPUT_LENGTH) + "\n...(输出已截断)";
+        }
+        return output;
     }
 
     @Override

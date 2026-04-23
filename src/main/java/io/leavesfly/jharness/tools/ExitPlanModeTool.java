@@ -38,9 +38,15 @@ public class ExitPlanModeTool extends BaseTool<ExitPlanModeToolInput> {
     public CompletableFuture<ToolResult> execute(ExitPlanModeToolInput input, ToolExecutionContext context) {
         return CompletableFuture.supplyAsync(() -> {
             try {
+                // F-P1-2：退出时检查是否有未执行的计划
+                io.leavesfly.jharness.core.plan.ExecutionPlan plan = EnterPlanModeTool.getActivePlan();
+                String planSummary = "";
+                if (plan != null && plan.hasPendingWork()) {
+                    planSummary = "\n⚠ 注意：有未执行的计划步骤被丢弃：\n" + plan.toSummary();
+                }
+                EnterPlanModeTool.clearPlan();
                 settings.setPermissionMode("default");
-                settings.save();
-                return ToolResult.success("已退出计划模式，恢复到默认模式。");
+                return ToolResult.success("已退出计划模式，恢复到默认模式。" + planSummary);
             } catch (Exception e) {
                 logger.error("切换模式失败", e);
                 return ToolResult.error("切换模式失败: " + e.getMessage());

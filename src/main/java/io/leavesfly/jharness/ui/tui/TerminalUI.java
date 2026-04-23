@@ -97,8 +97,33 @@ public class TerminalUI {
     }
 
     private void handleInput(KeyStroke keyStroke) {
-        if (keyStroke.getKeyType() == KeyType.Escape || keyStroke.getKeyType() == KeyType.EOF) {
-            running = false; return;
+        // F-P0-3：正在等待 AI 响应时，ESC 触发取消而非退出 TUI；
+        // 不在响应中时，ESC 保持原有语义（退出 TUI）。
+        if (keyStroke.getKeyType() == KeyType.Escape) {
+            if (waitingForResponse && queryEngine != null) {
+                queryEngine.cancel();
+                statusMessage = "正在取消...";
+                addSystemMessage("⏹ 已请求取消当前查询");
+                return;
+            }
+            running = false;
+            return;
+        }
+        if (keyStroke.getKeyType() == KeyType.EOF) {
+            running = false;
+            return;
+        }
+        // Ctrl+C 与 ESC 行为一致：响应中取消，否则退出
+        if (keyStroke.isCtrlDown() && keyStroke.getKeyType() == KeyType.Character
+                && keyStroke.getCharacter() != null && keyStroke.getCharacter() == 'c') {
+            if (waitingForResponse && queryEngine != null) {
+                queryEngine.cancel();
+                statusMessage = "正在取消...";
+                addSystemMessage("⏹ 已请求取消当前查询 (Ctrl+C)");
+                return;
+            }
+            running = false;
+            return;
         }
         if (keyStroke.getKeyType() == KeyType.Enter) { processInput(); return; }
         if (keyStroke.getKeyType() == KeyType.Backspace) {
@@ -127,6 +152,9 @@ public class TerminalUI {
             case "/status": addSystemMessage("模型: " + currentModel + " | 权限: " + permissionMode + " | " + statusMessage); break;
             case "/model": currentModel = args.isEmpty() ? currentModel : args; addSystemMessage("模型: " + currentModel); break;
             case "/permissions": addSystemMessage("权限模式: " + permissionMode); break;
+            case "/plan": handlePlanCommand(); break;
+            case "/approve": handleApproveCommand(args); break;
+            case "/approve_all": handleApproveAllCommand(); break;
             default:
                 if (commandRegistry != null) {
                     commandRegistry.lookup(input).ifPresentOrElse(
@@ -208,6 +236,88 @@ public class TerminalUI {
                 pendingAssistantText.setLength(0);
             }
         }
+    }
+
+    /**
+     * F-P1-2：/plan 命令——查看当前执行计划
+     */
+    private void handlePlanCommand() {
+        io.leavesfly.jharness.core.plan.ExecutionPlan plan =
+                io.leavesfly.jharness.tools.EnterPlanModeTool.getActivePlan();
+        if (plan == null) {
+            addSystemMessage("当前不在 Plan Mode 中。使用 enter_plan_mode 工具进入。");
+            return;
+        }
+        if (plan.size() == 0) {
+            addSystemMessage("执行计划为空，等待 LLM 生成工具调用...");
+            return;
+        }
+        addSystemMessage(plan.toSummary());
+    }
+
+    /**
+     * F-P1-2：/approve 命令——批准单个步骤并执行所有已批准步骤
+     */
+    private void handleApproveCommand(String args) {
+        io.leavesfly.jharness.core.plan.ExecutionPlan plan =
+                io.leavesfly.jharness.tools.EnterPlanModeTool.getActivePlan();
+        if (plan == null) {
+            addSystemMessage("当前不在 Plan Mode 中。");
+            return;
+        }
+        if (args.isBlank()) {
+            addSystemMessage("用法: /approve <步骤号>  (从 1 开始)");
+            return;
+        }
+        try {
+            int stepIndex = Integer.parseInt(args.trim()) - 1;
+            if (plan.approve(stepIndex)) {
+                addSystemMessage("✅ 步骤 " + (stepIndex + 1) + " 已批准");
+                executeApprovedSteps(plan);
+            } else {
+                addSystemMessage("⚠ 无法批准步骤 " + (stepIndex + 1) + "（不存在或非 PENDING 状态）");
+            }
+        } catch (NumberFormatException e) {
+            addSystemMessage("⚠ 无效的步骤号: " + args);
+        }
+    }
+
+    /**
+     * F-P1-2：/approve_all 命令——批准所有待定步骤并执行
+     */
+    private void handleApproveAllCommand() {
+        io.leavesfly.jharness.core.plan.ExecutionPlan plan =
+                io.leavesfly.jharness.tools.EnterPlanModeTool.getActivePlan();
+        if (plan == null) {
+            addSystemMessage("当前不在 Plan Mode 中。");
+            return;
+        }
+        int count = plan.approveAll();
+        if (count == 0) {
+            addSystemMessage("没有待批准的步骤。");
+            return;
+        }
+        addSystemMessage("✅ 已批准 " + count + " 个步骤，开始执行...");
+        executeApprovedSteps(plan);
+    }
+
+    /**
+     * 执行已批准的计划步骤
+     */
+    private void executeApprovedSteps(io.leavesfly.jharness.core.plan.ExecutionPlan plan) {
+        if (queryEngine == null) {
+            addSystemMessage("⚠ QueryEngine 未初始化。");
+            return;
+        }
+        waitingForResponse = true;
+        statusMessage = "执行计划中...";
+        CompletableFuture.runAsync(() -> {
+            String result = queryEngine.executeApprovedPlanSteps(plan, this::handleStreamEvent);
+            addSystemMessage(result);
+            addSystemMessage(plan.toSummary());
+            waitingForResponse = false;
+            statusMessage = "就绪";
+        });
     }
 
     public void setQueryEngine(QueryEngine queryEngine) {

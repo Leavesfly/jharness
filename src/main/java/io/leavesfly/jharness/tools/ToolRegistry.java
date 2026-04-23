@@ -125,6 +125,8 @@ public class ToolRegistry {
         registry.register(new FileReadTool());
         registry.register(new FileWriteTool());
         registry.register(new FileEditTool());
+        registry.register(new MultiEditTool());
+        registry.register(new UndoEditTool());
         registry.register(new GlobTool());
         registry.register(new GrepTool());
 

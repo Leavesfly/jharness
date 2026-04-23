@@ -1,11 +1,15 @@
 package io.leavesfly.jharness.core.engine;
 
-import io.leavesfly.jharness.integration.api.OpenAiApiClient;
+import io.leavesfly.jharness.core.plan.ExecutionPlan;
+import io.leavesfly.jharness.core.plan.PlanStep;
 import io.leavesfly.jharness.integration.api.ApiMessageCompleteEvent;
+import io.leavesfly.jharness.integration.api.LlmProvider;
+import io.leavesfly.jharness.integration.api.OpenAiApiClient;
 import io.leavesfly.jharness.core.engine.model.*;
 import io.leavesfly.jharness.core.engine.stream.StreamEvent;
 import io.leavesfly.jharness.core.engine.stream.ToolExecutionCompleted;
 import io.leavesfly.jharness.core.engine.stream.ToolExecutionStarted;
+import io.leavesfly.jharness.tools.EnterPlanModeTool;
 
 import io.leavesfly.jharness.session.permissions.PermissionChecker;
 import io.leavesfly.jharness.session.permissions.PermissionDecision;
@@ -38,14 +42,29 @@ public class QueryEngine implements AutoCloseable {
     private final Object messageLock = new Object();
     private final CostTracker costTracker = new CostTracker();
     private final MessageCompactionService compactionService = new MessageCompactionService();
-    private final OpenAiApiClient apiClient;
+    private final LlmProvider apiClient;
     private final ToolRegistry toolRegistry;
     private final PermissionChecker permissionChecker;
     private volatile Path cwd;
     private final String systemPrompt;
     private final int maxTurns;
+    /** F-P0-3 流式中断标志：submitMessage 开始时置 false，cancel() 置 true，循环每轮检查。 */
+    private final java.util.concurrent.atomic.AtomicBoolean cancelled =
+            new java.util.concurrent.atomic.AtomicBoolean(false);
 
+    /**
+     * 构造函数（兼容旧签名）。
+     */
     public QueryEngine(OpenAiApiClient apiClient, ToolRegistry toolRegistry,
+                       PermissionChecker permissionChecker, Path cwd,
+                       String systemPrompt, int maxTurns) {
+        this((LlmProvider) apiClient, toolRegistry, permissionChecker, cwd, systemPrompt, maxTurns);
+    }
+
+    /**
+     * 构造函数（F-P0-1：支持任意 LlmProvider 实现）。
+     */
+    public QueryEngine(LlmProvider apiClient, ToolRegistry toolRegistry,
                        PermissionChecker permissionChecker, Path cwd,
                        String systemPrompt, int maxTurns) {
         this.apiClient = apiClient;
@@ -54,6 +73,28 @@ public class QueryEngine implements AutoCloseable {
         this.cwd = cwd;
         this.systemPrompt = systemPrompt;
         this.maxTurns = maxTurns;
+    }
+
+    /**
+     * 取消当前正在进行的查询（F-P0-3）。
+     *
+     * 调用后：
+     * - 中断当前活跃的 SSE 连接；
+     * - 置位 cancelled 标志，使下一轮循环立即退出；
+     * - 调用者可在下一次 submitMessage 开始时自动复位。
+     */
+    public void cancel() {
+        cancelled.set(true);
+        try {
+            apiClient.cancelAllActiveRequests();
+        } catch (Exception e) {
+            logger.warn("取消当前请求失败", e);
+        }
+    }
+
+    /** 查询是否处于被取消状态（供 UI/测试使用）。 */
+    public boolean isCancelled() {
+        return cancelled.get();
     }
 
     /**
@@ -92,6 +133,8 @@ public class QueryEngine implements AutoCloseable {
      * @return 执行完成的 Future
      */
     public CompletableFuture<Void> submitMessage(String prompt, Consumer<StreamEvent> eventConsumer) {
+        // F-P0-3：新的提交开始时复位取消标志，避免上次的 cancel 影响新查询
+        cancelled.set(false);
         synchronized (messageLock) {
             messages.add(ConversationMessage.userText(prompt));
         }
@@ -155,6 +198,14 @@ public class QueryEngine implements AutoCloseable {
                 for (int turn = 0; turn < maxTurns; turn++) {
                     logger.debug("执行第 {} 轮查询", turn + 1);
 
+                    // F-P0-3：每轮循环开始检查取消标志
+                    if (cancelled.get()) {
+                        logger.info("查询被用户取消（第 {} 轮前）", turn + 1);
+                        eventConsumer.accept(new io.leavesfly.jharness.core.engine.stream.AssistantTurnComplete(
+                                "查询已被用户取消"));
+                        return;
+                    }
+
                     // 检查是否需要压缩消息历史
                     synchronized (messageLock) {
                         if (compactionService.needsCompaction(messages)) {
@@ -170,11 +221,45 @@ public class QueryEngine implements AutoCloseable {
                     synchronized (messageLock) {
                         snapshot = new ArrayList<>(messages);
                     }
-                    ApiMessageCompleteEvent response = apiClient.streamMessage(
-                            snapshot, systemPrompt, toolRegistry.toApiSchema(), eventConsumer).join();
+                    ApiMessageCompleteEvent response;
+                    try {
+                        response = apiClient.streamMessage(
+                                snapshot, systemPrompt, toolRegistry.toApiSchema(), eventConsumer).join();
+                    } catch (java.util.concurrent.CancellationException ce) {
+                        // F-P0-3：SSE 被 cancelAllActiveRequests 关闭时，future 以 CancellationException 完成
+                        logger.info("LLM 请求被取消");
+                        eventConsumer.accept(new io.leavesfly.jharness.core.engine.stream.AssistantTurnComplete(
+                                "查询已被用户取消"));
+                        return;
+                    } catch (java.util.concurrent.CompletionException ex) {
+                        Throwable cause = ex.getCause() != null ? ex.getCause() : ex;
+                        if (cause instanceof java.util.concurrent.CancellationException
+                                || cancelled.get()) {
+                            logger.info("LLM 请求被取消: {}", cause.getMessage());
+                            eventConsumer.accept(new io.leavesfly.jharness.core.engine.stream.AssistantTurnComplete(
+                                    "查询已被用户取消"));
+                            return;
+                        }
+                        throw ex;
+                    }
 
-                    // 记录使用量
-                    costTracker.addUsage(response.getUsage());
+                    // F-P0-3：拿到响应后再次检查取消标志（避免把"已取消但已返回"的结果继续推进到工具执行）
+                    if (cancelled.get()) {
+                        logger.info("查询已在收到响应后被取消");
+                        eventConsumer.accept(new io.leavesfly.jharness.core.engine.stream.AssistantTurnComplete(
+                                "查询已被用户取消"));
+                        return;
+                    }
+
+                    // 记录使用量（F-P0-5：可能抛 BudgetExceededException）
+                    try {
+                        costTracker.addUsage(response.getUsage());
+                    } catch (BudgetExceededException bex) {
+                        logger.warn("预算超限: {}", bex.getMessage());
+                        eventConsumer.accept(new io.leavesfly.jharness.core.engine.stream.AssistantTurnComplete(
+                                "⚠ " + bex.getMessage()));
+                        return;
+                    }
 
                     // 检查是否有工具调用
                     if (!response.hasToolUses()) {
@@ -197,6 +282,19 @@ public class QueryEngine implements AutoCloseable {
                             MessageRole.ASSISTANT, assistantContent);
                     synchronized (messageLock) {
                         messages.add(assistantMsg);
+                    }
+
+                    // F-P1-2：Plan Mode 拦截——如果处于 Plan Mode，将工具调用记录为 PlanStep 而非执行
+                    ExecutionPlan activePlan = EnterPlanModeTool.getActivePlan();
+                    if (activePlan != null) {
+                        List<ToolResultBlock> planResults = interceptToolCallsForPlan(
+                                toolUses, activePlan, eventConsumer);
+                        ConversationMessage planResultMsg = new ConversationMessage(
+                                MessageRole.USER, new ArrayList<>(planResults));
+                        synchronized (messageLock) {
+                            messages.add(planResultMsg);
+                        }
+                        continue;
                     }
 
                     // 执行工具
@@ -353,6 +451,105 @@ public class QueryEngine implements AutoCloseable {
                 return ToolResult.error("工具执行失败: " + errorDetail);
             }
         });
+    }
+
+    /**
+     * F-P1-2：Plan Mode 下拦截工具调用，将其记录为 PlanStep 而不是真正执行。
+     * 返回的 ToolResultBlock 告知 LLM "已记录到执行计划"，使其可以继续输出后续步骤。
+     */
+    private List<ToolResultBlock> interceptToolCallsForPlan(
+            List<ToolUseBlock> toolUses, ExecutionPlan plan, Consumer<StreamEvent> eventConsumer) {
+        List<ToolResultBlock> results = new ArrayList<>();
+        for (ToolUseBlock toolUse : toolUses) {
+            String description = buildPlanStepDescription(toolUse);
+            String details = toolUse.getInput() != null ? toolUse.getInput().toString() : "";
+            PlanStep step = new PlanStep(plan.size(), toolUse.getName(), description, details);
+            plan.addStep(step);
+
+            String msg = String.format("📋 已记录到执行计划 (步骤 %d): [%s] %s",
+                    step.getIndex() + 1, toolUse.getName(), description);
+            eventConsumer.accept(new ToolExecutionCompleted(toolUse.getName(), toolUse.getId(), msg, false));
+
+            ToolResultBlock resultBlock = new ToolResultBlock(
+                    toolUse.getId(), msg, false);
+            results.add(resultBlock);
+        }
+        logger.info("Plan Mode: 已拦截 {} 个工具调用，计划共 {} 步", toolUses.size(), plan.size());
+        return results;
+    }
+
+    /**
+     * 从工具调用中提取人类可读的描述。
+     */
+    private String buildPlanStepDescription(ToolUseBlock toolUse) {
+        com.fasterxml.jackson.databind.JsonNode input = toolUse.getInput();
+        if (input == null) return toolUse.getName();
+        StringBuilder desc = new StringBuilder();
+        if (input.has("file_path")) {
+            desc.append(input.get("file_path").asText());
+        } else if (input.has("command")) {
+            String cmd = input.get("command").asText();
+            desc.append(cmd.length() > 60 ? cmd.substring(0, 60) + "..." : cmd);
+        } else if (input.has("path")) {
+            desc.append(input.get("path").asText());
+        }
+        return desc.length() > 0 ? desc.toString() : toolUse.getName();
+    }
+
+    /**
+     * F-P1-2：执行已批准的 PlanStep 列表。
+     * 由 /approve 或 /approve_all 命令触发，按照步骤顺序逐个执行工具。
+     *
+     * @param plan          执行计划
+     * @param eventConsumer 事件消费者，用于向 UI 推送执行进度
+     * @return 执行结果摘要
+     */
+    public String executeApprovedPlanSteps(ExecutionPlan plan, Consumer<StreamEvent> eventConsumer) {
+        List<PlanStep> approvedSteps = plan.getApprovedSteps();
+        if (approvedSteps.isEmpty()) {
+            return "没有待执行的已批准步骤。";
+        }
+
+        int successCount = 0;
+        int failCount = 0;
+
+        for (PlanStep step : approvedSteps) {
+            logger.info("执行计划步骤 {}: [{}] {}", step.getIndex() + 1, step.getToolName(), step.getDescription());
+            eventConsumer.accept(new ToolExecutionStarted(step.getToolName(),
+                    "plan_step_" + step.getIndex()));
+
+            try {
+                // 从 details（JSON）重建 ToolUseBlock
+                com.fasterxml.jackson.databind.JsonNode inputNode = OBJECT_MAPPER.readTree(step.getDetails());
+                ToolUseBlock syntheticToolUse = new ToolUseBlock(
+                        "plan_step_" + step.getIndex(), step.getToolName(), inputNode);
+                ToolResult result = executeToolCall(syntheticToolUse).join();
+
+                step.setResult(result.getOutput());
+                if (result.isError()) {
+                    step.setStatus(PlanStep.StepStatus.FAILED);
+                    failCount++;
+                } else {
+                    step.setStatus(PlanStep.StepStatus.EXECUTED);
+                    successCount++;
+                }
+
+                eventConsumer.accept(new ToolExecutionCompleted(
+                        step.getToolName(), "plan_step_" + step.getIndex(),
+                        result.getOutput(), result.isError()));
+            } catch (Exception e) {
+                logger.error("执行计划步骤 {} 失败", step.getIndex() + 1, e);
+                step.setStatus(PlanStep.StepStatus.FAILED);
+                step.setResult("执行失败: " + e.getMessage());
+                failCount++;
+                eventConsumer.accept(new ToolExecutionCompleted(
+                        step.getToolName(), "plan_step_" + step.getIndex(),
+                        "执行失败: " + e.getMessage(), true));
+            }
+        }
+
+        return String.format("计划执行完成：%d 成功，%d 失败（共 %d 步）",
+                successCount, failCount, approvedSteps.size());
     }
 
     /**

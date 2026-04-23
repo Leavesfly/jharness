@@ -1,5 +1,7 @@
 package io.leavesfly.jharness.tools;
 
+import io.leavesfly.jharness.core.edit.DiffUtils;
+import io.leavesfly.jharness.core.edit.EditHistoryManager;
 import io.leavesfly.jharness.tools.input.FileWriteToolInput;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -8,6 +10,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.util.concurrent.CompletableFuture;
 
 /**
@@ -49,14 +52,48 @@ public class FileWriteTool extends BaseTool<FileWriteToolInput> {
                     Files.createDirectories(filePath.getParent());
                 }
 
-                Files.writeString(filePath, input.getContent(), StandardCharsets.UTF_8);
-                
-                return ToolResult.success("成功写入文件: " + filePath);
+                // F-P0-4：读取原内容用于历史记录；不存在则记录为 null 表示新建
+                String originalContent = Files.exists(filePath)
+                        ? Files.readString(filePath, StandardCharsets.UTF_8)
+                        : null;
+
+                // 原子写：先写临时文件再 ATOMIC_MOVE 替换，避免写入中途崩溃留下半成品文件
+                atomicWrite(filePath, input.getContent());
+
+                long editId = EditHistoryManager.getInstance().record(
+                        filePath.toString(), originalContent, input.getContent(), getName());
+
+                String diffPreview = DiffUtils.diff(
+                        originalContent == null ? "" : originalContent,
+                        input.getContent());
+                return ToolResult.success(String.format(
+                        "成功写入文件: %s, edit_id=%d\n--- diff ---\n%s",
+                        filePath, editId, diffPreview));
 
             } catch (IOException e) {
                 logger.error("写入文件失败", e);
                 return ToolResult.error("写入文件失败: " + e.getMessage());
             }
         });
+    }
+
+    /**
+     * 原子写：先写临时文件再 ATOMIC_MOVE 替换目标。
+     *
+     * 若文件系统不支持 ATOMIC_MOVE（如 Windows 跨卷），回退到 REPLACE_EXISTING。
+     */
+    private static void atomicWrite(Path target, String content) throws IOException {
+        Path parent = target.getParent() != null ? target.getParent() : target.toAbsolutePath().getParent();
+        Path tmp = Files.createTempFile(parent, ".jh-write-", ".tmp");
+        try {
+            Files.writeString(tmp, content, StandardCharsets.UTF_8);
+            try {
+                Files.move(tmp, target, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+            } catch (java.nio.file.AtomicMoveNotSupportedException amns) {
+                Files.move(tmp, target, StandardCopyOption.REPLACE_EXISTING);
+            }
+        } finally {
+            Files.deleteIfExists(tmp);
+        }
     }
 }

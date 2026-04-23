@@ -10,6 +10,7 @@ import io.leavesfly.jharness.integration.api.errors.RateLimitFailureException;
 import io.leavesfly.jharness.integration.api.retry.RetryPolicy;
 import io.leavesfly.jharness.core.engine.model.ContentBlock;
 import io.leavesfly.jharness.core.engine.model.ConversationMessage;
+import io.leavesfly.jharness.core.engine.model.ImageBlock;
 import io.leavesfly.jharness.core.engine.model.TextBlock;
 import io.leavesfly.jharness.core.engine.model.ToolResultBlock;
 import io.leavesfly.jharness.core.engine.model.ToolUseBlock;
@@ -43,8 +44,10 @@ import java.util.function.Consumer;
  *
  * 使用 OkHttp 实现与 OpenAI 兼容 API 的交互，支持流式响应和重试机制。
  * 兼容所有 OpenAI 标准协议的 API 端点（如 DashScope、DeepSeek、Moonshot、vLLM 等）。
+ *
+ * F-P0-1：实现 {@link LlmProvider} 接口，统一 Provider 抽象。
  */
-public class OpenAiApiClient implements AutoCloseable {
+public class OpenAiApiClient implements LlmProvider {
     private static final Logger logger = LoggerFactory.getLogger(OpenAiApiClient.class);
     private static final String CHAT_COMPLETIONS_PATH = "/v1/chat/completions";
     private static final String CHAT_COMPLETIONS_SUFFIX = "/chat/completions";
@@ -61,6 +64,13 @@ public class OpenAiApiClient implements AutoCloseable {
     private final int maxTokens;
     private final RetryPolicy retryPolicy;
     private final List<EventSource> activeEventSources = Collections.synchronizedList(new ArrayList<>());
+    /**
+     * 当前活跃的 streamMessage future 列表，用于 {@link #cancelAllActiveRequests()} 能确保
+     * 它们以 CancellationException 异常完成，避免上层 join() 因 SSE.cancel() 不保证触发
+     * onClosed/onFailure 而永久阻塞。
+     */
+    private final List<CompletableFuture<ApiMessageCompleteEvent>> activeFutures =
+            Collections.synchronizedList(new ArrayList<>());
 
     /**
      * 构造 API 客户端（默认超时）。
@@ -179,6 +189,7 @@ public class OpenAiApiClient implements AutoCloseable {
      * @param eventConsumer 事件消费者
      * @return 包含完整消息和使用量的 CompletableFuture
      */
+    @Override
     public CompletableFuture<ApiMessageCompleteEvent> streamMessage(
             List<ConversationMessage> messages,
             String systemPrompt,
@@ -186,6 +197,51 @@ public class OpenAiApiClient implements AutoCloseable {
             Consumer<StreamEvent> eventConsumer) {
 
         return streamMessageWithRetry(messages, systemPrompt, tools, eventConsumer, 0);
+    }
+
+    /**
+     * 取消当前所有活跃的流式请求（F-P0-3）。
+     *
+     * 保持 close() 不会被触发的情况下，仅主动关闭当前 SSE 连接，
+     * 使得用户中断后仍可继续使用该 Provider 发起新请求。
+     *
+     * 实现细节：EventSource.cancel() 并不保证后续触发 onClosed/onFailure 回调，
+     * 因此这里必须**主动**将所有活跃 future 以 CancellationException 完成，
+     * 否则上层 .join() 会永久阻塞在已被取消的连接上。
+     */
+    @Override
+    public void cancelAllActiveRequests() {
+        // 1. 关闭 SSE 连接
+        synchronized (activeEventSources) {
+            for (EventSource es : activeEventSources) {
+                try {
+                    es.cancel();
+                } catch (Exception e) {
+                    logger.warn("取消 SSE 连接失败", e);
+                }
+            }
+            activeEventSources.clear();
+        }
+        // 2. 主动让所有未完成的 future 以 CancellationException 结束
+        synchronized (activeFutures) {
+            for (CompletableFuture<ApiMessageCompleteEvent> f : activeFutures) {
+                if (!f.isDone()) {
+                    f.cancel(true);
+                }
+            }
+            activeFutures.clear();
+        }
+        logger.info("已取消所有活跃的 LLM 请求");
+    }
+
+    @Override
+    public String getProviderName() {
+        return "openai-compatible";
+    }
+
+    @Override
+    public String getModelName() {
+        return model;
     }
 
     private CompletableFuture<ApiMessageCompleteEvent> streamMessageWithRetry(
@@ -196,6 +252,11 @@ public class OpenAiApiClient implements AutoCloseable {
             int attempt) {
 
         CompletableFuture<ApiMessageCompleteEvent> future = new CompletableFuture<>();
+        // 仅在最外层（attempt==0）注册 future，重试场景通过 whenComplete 级联完成，避免重复注册
+        if (attempt == 0) {
+            activeFutures.add(future);
+            future.whenComplete((ok, err) -> activeFutures.remove(future));
+        }
 
         try {
             ObjectNode requestBody = buildRequestBody(messages, systemPrompt, tools);
@@ -520,16 +581,16 @@ public class OpenAiApiClient implements AutoCloseable {
     }
 
     private void convertUserMessage(List<ContentBlock> blocks, ArrayNode messagesArray) {
-        // 用户消息中可能混合 TextBlock 和 ToolResultBlock
+        // 用户消息中可能混合 TextBlock、ImageBlock 和 ToolResultBlock
         // ToolResultBlock 在 OpenAI 中需要作为独立的 role=tool 消息发送
-        StringBuilder textContent = new StringBuilder();
+        List<ContentBlock> contentParts = new ArrayList<>();
         List<ToolResultBlock> toolResults = new ArrayList<>();
 
         for (ContentBlock block : blocks) {
-            if (block instanceof TextBlock textBlock) {
-                textContent.append(textBlock.getText());
-            } else if (block instanceof ToolResultBlock toolResult) {
+            if (block instanceof ToolResultBlock toolResult) {
                 toolResults.add(toolResult);
+            } else if (block instanceof TextBlock || block instanceof ImageBlock) {
+                contentParts.add(block);
             }
         }
 
@@ -541,11 +602,39 @@ public class OpenAiApiClient implements AutoCloseable {
             toolMsg.put("content", toolResult.getContent());
         }
 
-        // 再发送用户文本消息（如果有）
-        if (!textContent.isEmpty()) {
+        // 再发送用户消息（如果有内容部分）
+        if (!contentParts.isEmpty()) {
             ObjectNode userMsg = messagesArray.addObject();
             userMsg.put("role", "user");
-            userMsg.put("content", textContent.toString());
+
+            // F-P1-3：如果消息仅含纯文本，使用字符串格式（兼容性最好）；
+            // 如果包含图片，使用 OpenAI content 数组格式。
+            boolean hasImage = contentParts.stream().anyMatch(b -> b instanceof ImageBlock);
+            if (hasImage) {
+                ArrayNode contentArray = userMsg.putArray("content");
+                for (ContentBlock part : contentParts) {
+                    if (part instanceof TextBlock textBlock) {
+                        ObjectNode textNode = contentArray.addObject();
+                        textNode.put("type", "text");
+                        textNode.put("text", textBlock.getText());
+                    } else if (part instanceof ImageBlock imageBlock) {
+                        ObjectNode imgNode = contentArray.addObject();
+                        imgNode.put("type", "image_url");
+                        ObjectNode imgUrlNode = imgNode.putObject("image_url");
+                        imgUrlNode.put("url", imageBlock.toImageUrlValue());
+                        imgUrlNode.put("detail", imageBlock.getDetail());
+                    }
+                }
+            } else {
+                // 纯文本：合并为单个字符串
+                StringBuilder text = new StringBuilder();
+                for (ContentBlock part : contentParts) {
+                    if (part instanceof TextBlock t) {
+                        text.append(t.getText());
+                    }
+                }
+                userMsg.put("content", text.toString());
+            }
         }
     }
 
