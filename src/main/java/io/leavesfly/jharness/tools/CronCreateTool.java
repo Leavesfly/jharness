@@ -52,13 +52,35 @@ public class CronCreateTool extends BaseTool<CronCreateToolInput> {
             );
         }
 
+        // 安全加固：入库前必须过危险命令黑名单，避免绕过 bash 工具通过 cron 注入任意命令。
+        // 这里复用 BashTool 的统一检测逻辑，后续 RemoteTrigger 执行时也会再次校验。
+        String dangerous = BashTool.detectDangerousCommand(input.getCommand());
+        if (dangerous != null) {
+            return CompletableFuture.completedFuture(
+                ToolResult.error("安全限制: cron 作业命令被危险命令黑名单拦截")
+            );
+        }
+        if (input.getCommand().length() > 10000) {
+            return CompletableFuture.completedFuture(
+                ToolResult.error("安全限制: cron 命令长度超过 10000 字符")
+            );
+        }
+
         try {
             Map<String, Object> job = new HashMap<>();
             job.put("name", input.getName());
             job.put("schedule", input.getSchedule());
             job.put("command", input.getCommand());
             if (input.getCwd() != null && !input.getCwd().isEmpty()) {
-                job.put("cwd", input.getCwd());
+                // cwd 必须是绝对路径 + 规范化后在项目工作目录内，避免指到 /etc、/var 等敏感目录
+                java.nio.file.Path requested = java.nio.file.Paths.get(input.getCwd()).toAbsolutePath().normalize();
+                java.nio.file.Path base = context.getCwd().toAbsolutePath().normalize();
+                if (!requested.startsWith(base)) {
+                    return CompletableFuture.completedFuture(
+                        ToolResult.error("安全限制: cron cwd 必须在当前工作目录内")
+                    );
+                }
+                job.put("cwd", requested.toString());
             }
 
             cronRegistry.upsertJob(job);

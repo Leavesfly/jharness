@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.leavesfly.jharness.integration.mcp.types.McpConnectionStatus;
+import io.leavesfly.jharness.util.UrlSafetyValidator;
 import okhttp3.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -37,6 +38,9 @@ public class McpClientManager {
         this.sharedHttpClient = new OkHttpClient.Builder()
                 .connectTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
                 .readTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
+                // SSRF 防护：禁止跟随重定向，避免 302 到内网地址绕过 URL 校验
+                .followRedirects(false)
+                .followSslRedirects(false)
                 .build();
     }
 
@@ -139,12 +143,22 @@ public class McpClientManager {
     }
     
     /**
-     * 连接 HTTP 类型的 MCP 服务器
+     * 连接 HTTP 类型的 MCP 服务器。
+     *
+     * 安全约束（S-4）：在建立会话前必须通过 UrlSafetyValidator：
+     *   - 仅允许 http/https；
+     *   - 拒绝解析到回环/链路本地（含 169.254.169.254 云元数据）/站点本地/多播等地址。
      */
     @SuppressWarnings("unchecked")
     private void connectHttp(String name, Map<String, Object> config) throws Exception {
         String url = (String) config.get("url");
         Map<String, String> headers = (Map<String, String>) config.get("headers");
+
+        String safetyError = UrlSafetyValidator.validate(url);
+        if (safetyError != null) {
+            logger.warn("拒绝不安全的 MCP HTTP URL: server={}, reason={}", name, safetyError);
+            throw new IllegalArgumentException("MCP HTTP 服务器 URL 不安全: " + safetyError);
+        }
 
         HttpMcpSession session = new HttpMcpSession(sharedHttpClient, url, headers, name);
         session.initialize();
@@ -267,8 +281,19 @@ public class McpClientManager {
     
     /**
      * 更新服务器配置
+     *
+     * 当配置为 HTTP/HTTPS 类型时，这里提前做一次 URL 安全校验，
+     * 避免后续重连路径成为 SSRF 注入入口（S-4 补强）。
      */
     public void updateServerConfig(String name, Map<String, Object> config) {
+        String type = config == null ? null : (String) config.get("type");
+        if ("http".equals(type) || "https".equals(type)) {
+            String url = (String) config.get("url");
+            String err = UrlSafetyValidator.validate(url);
+            if (err != null) {
+                throw new IllegalArgumentException("MCP HTTP 服务器 URL 不安全: " + err);
+            }
+        }
         serverConfigs.put(name, config);
     }
     
@@ -748,6 +773,9 @@ public class McpClientManager {
             return request;
         }
 
+        /** MCP HTTP 响应体上限：16 MB，避免恶意/异常服务器返回超大响应打爆内存。 */
+        private static final long MAX_RESPONSE_BODY_BYTES = 16L * 1024 * 1024;
+
         private String sendHttpRequest(ObjectNode jsonRpcRequest) throws IOException {
             String body = MAPPER.writeValueAsString(jsonRpcRequest);
 
@@ -764,7 +792,22 @@ public class McpClientManager {
                     throw new IOException("MCP HTTP 请求失败: " + response.code());
                 }
                 ResponseBody responseBody = response.body();
-                return responseBody != null ? responseBody.string() : "{}";
+                if (responseBody == null) {
+                    return "{}";
+                }
+                long contentLength = responseBody.contentLength();
+                if (contentLength > MAX_RESPONSE_BODY_BYTES) {
+                    throw new IOException("MCP HTTP 响应体超过上限 "
+                            + MAX_RESPONSE_BODY_BYTES + " 字节: " + contentLength);
+                }
+                // contentLength 未知时，通过 source().request 限流读取
+                okio.BufferedSource src = responseBody.source();
+                src.request(MAX_RESPONSE_BODY_BYTES + 1);
+                okio.Buffer buf = src.getBuffer();
+                if (buf.size() > MAX_RESPONSE_BODY_BYTES) {
+                    throw new IOException("MCP HTTP 响应体超过上限: " + buf.size());
+                }
+                return buf.readString(StandardCharsets.UTF_8);
             }
         }
     }

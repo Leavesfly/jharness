@@ -67,12 +67,53 @@ public class RemoteTriggerTool extends BaseTool<RemoteTriggerToolInput> {
             String cwd = (String) job.get("cwd");
             int timeoutSeconds = input.getTimeoutSeconds();
 
+            // 执行前安全校验：即使 cron_create 做过校验，这里也再过一次黑名单，
+            // 避免 cron_jobs.json 被旁路篡改 / 旧版 JHarness 注入的作业继续生效。
+            if (command == null || command.isBlank()) {
+                return CompletableFuture.completedFuture(
+                    ToolResult.error("Cron job has no command: " + input.getName())
+                );
+            }
+            String dangerous = BashTool.detectDangerousCommand(command);
+            if (dangerous != null) {
+                return CompletableFuture.completedFuture(
+                    ToolResult.error("安全限制: 作业命令被危险命令黑名单拦截")
+                );
+            }
+
+            // cwd 必须在当前工作目录内，二次加固
+            String safeCwd = resolveSafeCwd(cwd, context.getCwd());
+            if (cwd != null && !cwd.isEmpty() && safeCwd == null) {
+                return CompletableFuture.completedFuture(
+                    ToolResult.error("安全限制: 作业 cwd 超出当前工作目录边界")
+                );
+            }
+
             // 执行命令
-            return executeCommand(command, cwd, timeoutSeconds, input.getName());
+            return executeCommand(command, safeCwd, timeoutSeconds, input.getName());
         } catch (Exception e) {
             return CompletableFuture.completedFuture(
                 ToolResult.error("Failed to trigger job: " + e.getMessage())
             );
+        }
+    }
+
+    /**
+     * 把作业里的 cwd 规范化到绝对路径并校验必须在 base 目录内，不通过时返回 null。
+     */
+    private static String resolveSafeCwd(String cwd, java.nio.file.Path base) {
+        if (cwd == null || cwd.isEmpty()) {
+            return null;
+        }
+        try {
+            java.nio.file.Path normalized = java.nio.file.Paths.get(cwd).toAbsolutePath().normalize();
+            java.nio.file.Path baseAbs = base.toAbsolutePath().normalize();
+            if (!normalized.startsWith(baseAbs)) {
+                return null;
+            }
+            return normalized.toString();
+        } catch (Exception e) {
+            return null;
         }
     }
 

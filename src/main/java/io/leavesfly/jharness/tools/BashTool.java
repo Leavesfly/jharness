@@ -228,13 +228,35 @@ public class BashTool extends BaseTool<BashToolInput> {
      * 检测高危命令模式，返回匹配的模式或 null。
      *
      * 使用预编译 Pattern + find() 提升性能（相比每次 matches() 正则编译）。
+     * 同时对命令做最小规范化（去引号、归一 ${IFS}/空白），兜住常见绕过手法。
+     *
+     * public 暴露：供 CronCreateTool/RemoteTriggerTool 等间接执行 shell 的工具
+     * 在入库 / 执行前做统一校验，避免成为黑名单绕过通道。
      */
-    private static String detectDangerousCommand(String command) {
+    public static String detectDangerousCommand(String command) {
+        if (command == null) {
+            return null;
+        }
+        String normalized = normalizeForDetection(command);
         for (Pattern pattern : DANGEROUS_COMMAND_PATTERNS) {
-            if (pattern.matcher(command).find()) {
+            if (pattern.matcher(command).find() || pattern.matcher(normalized).find()) {
                 return pattern.pattern();
             }
         }
         return null;
+    }
+
+    /**
+     * 最小规范化：去除单/双引号、将 ${IFS}/$IFS、制表/换行、连续空白归一为单空格。
+     * 仅用于黑名单匹配，不用于实际执行。
+     */
+    private static String normalizeForDetection(String command) {
+        String result = command.replace("'", "").replace("\"", "");
+        result = result.replace("${IFS}", " ")
+                .replace("$IFS", " ")
+                .replace("\t", " ")
+                .replace("\n", " ")
+                .replace("\r", " ");
+        return result.replaceAll("\\s+", " ").trim();
     }
 }

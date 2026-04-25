@@ -1,17 +1,13 @@
 package io.leavesfly.jharness.tools;
 
 import io.leavesfly.jharness.tools.input.WebFetchToolInput;
+import io.leavesfly.jharness.util.UrlSafetyValidator;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.Response;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.net.InetAddress;
-import java.net.URI;
-import java.net.URISyntaxException;
-import java.net.UnknownHostException;
-import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 
@@ -23,13 +19,11 @@ import java.util.concurrent.TimeUnit;
  * 安全限制：
  * - 仅允许 http/https 协议，禁止 file://、ftp://、jar:// 等；
  * - 禁止访问本地回环、链路本地、内网私有地址，防止 SSRF 攻击；
+ * - 禁止重定向跟随（避免 302 → 内网地址绕过）；
  * - 连接和读取超时限制在合理范围内，避免慢速攻击。
  */
 public class WebFetchTool extends BaseTool<WebFetchToolInput> {
     private static final Logger logger = LoggerFactory.getLogger(WebFetchTool.class);
-
-    /** 允许的 URL 协议白名单。 */
-    private static final Set<String> ALLOWED_SCHEMES = Set.of("http", "https");
 
     private final OkHttpClient httpClient;
 
@@ -37,6 +31,9 @@ public class WebFetchTool extends BaseTool<WebFetchToolInput> {
         this.httpClient = new OkHttpClient.Builder()
                 .connectTimeout(10, TimeUnit.SECONDS)
                 .readTimeout(30, TimeUnit.SECONDS)
+                // SSRF 防护：禁止跟随重定向，否则 302 到 http://127.0.0.1/admin 会绕过校验
+                .followRedirects(false)
+                .followSslRedirects(false)
                 .build();
     }
 
@@ -94,49 +91,13 @@ public class WebFetchTool extends BaseTool<WebFetchToolInput> {
     }
 
     /**
-     * 校验 URL 是否安全，防止 SSRF 攻击。
+     * 校验 URL 是否安全，防止 SSRF 攻击。委托给统一的 {@link UrlSafetyValidator}，
+     * 与 McpClientManager / HookExecutor 共享同一套协议白名单 + 内网地址黑名单逻辑。
      *
      * @return 若合法返回 null；否则返回错误信息
      */
     private static String validateUrl(String url) {
-        if (url == null || url.isBlank()) {
-            return "URL 不能为空";
-        }
-
-        URI uri;
-        try {
-            uri = new URI(url);
-        } catch (URISyntaxException e) {
-            return "URL 格式非法: " + e.getMessage();
-        }
-
-        String scheme = uri.getScheme();
-        if (scheme == null || !ALLOWED_SCHEMES.contains(scheme.toLowerCase())) {
-            return "安全限制: 仅允许 http/https 协议，实际: " + scheme;
-        }
-
-        String host = uri.getHost();
-        if (host == null || host.isBlank()) {
-            return "URL 必须包含有效的主机名";
-        }
-
-        // 解析主机，阻止访问本地/内网地址（含 IP 直连和域名解析结果）
-        try {
-            InetAddress[] addresses = InetAddress.getAllByName(host);
-            for (InetAddress addr : addresses) {
-                if (addr.isLoopbackAddress()
-                        || addr.isAnyLocalAddress()
-                        || addr.isLinkLocalAddress()
-                        || addr.isSiteLocalAddress()
-                        || addr.isMulticastAddress()) {
-                    return "安全限制: 禁止访问内网/本地/多播地址 " + addr.getHostAddress();
-                }
-            }
-        } catch (UnknownHostException e) {
-            return "无法解析主机: " + host;
-        }
-
-        return null;
+        return UrlSafetyValidator.validate(url);
     }
 
     @Override
