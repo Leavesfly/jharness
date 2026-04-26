@@ -7,18 +7,25 @@ import io.leavesfly.jharness.command.commands.SimpleSlashCommand;
 import io.leavesfly.jharness.core.Settings;
 import io.leavesfly.jharness.core.engine.CostTracker;
 import io.leavesfly.jharness.core.engine.QueryEngine;
+import io.leavesfly.jharness.core.state.AppState;
+import io.leavesfly.jharness.core.state.AppStateStore;
 import io.leavesfly.jharness.agent.hooks.HookRegistry;
 import io.leavesfly.jharness.core.MemoryManager;
+import io.leavesfly.jharness.prompts.outputstyles.OutputStyle;
+import io.leavesfly.jharness.prompts.outputstyles.OutputStyleLoader;
 
+import java.io.File;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.stream.Collectors;
 
 /**
  * 工具和系统命令 Handler
- * 处理: /memory, /usage, /cost, /stats, /hooks, /vim, /voice
+ * 处理: /memory, /usage, /cost, /stats, /hooks, /vim, /voice, /output-style
  */
 public class SystemCommandHandler {
 
@@ -144,25 +151,113 @@ public class SystemCommandHandler {
             if (engine == null) {
                 return CompletableFuture.completedFuture(CommandResult.error("查询引擎未初始化"));
             }
-
+    
+            Settings settings = ctx.getSettings();
+            AppStateStore stateStore = ctx.getAppStateStore();
+    
             int msgCount = engine.getMessages().size();
             CostTracker tracker = engine.getCostTracker();
-
-            StringBuilder sb = new StringBuilder("会话统计:\n");
-            sb.append("  消息数: ").append(msgCount).append("\n");
-
-            if (tracker != null) {
-                sb.append("  请求数: ").append(tracker.getRequestCount()).append("\n");
-                sb.append("  总 token: ").append(tracker.getTotalTokens());
-            }
-
+    
+            // 工具调用次数
             int toolCalls = 0;
             for (var msg : engine.getMessages()) {
                 toolCalls += msg.getToolUses().size();
             }
-            sb.append("\n  工具调用: ").append(toolCalls);
-
+    
+            // 从 AppStateStore 或 Settings 读取状态
+            String outputStyle = "default";
+            boolean vimEnabled = false;
+            boolean voiceEnabled = false;
+            String effort = "medium";
+            int passes = 1;
+            if (stateStore != null) {
+                AppState state = stateStore.get();
+                outputStyle = state.getOutputStyle();
+                vimEnabled = state.isVimEnabled();
+                voiceEnabled = state.isVoiceEnabled();
+                effort = state.getEffort();
+                passes = state.getPasses();
+            } else if (settings != null) {
+                outputStyle = settings.getOutputStyle();
+                vimEnabled = settings.isVimEnabled();
+                voiceEnabled = settings.isVoiceEnabled();
+                effort = settings.getEffort();
+                passes = settings.getPasses();
+            }
+    
+            StringBuilder sb = new StringBuilder("会话统计:\n");
+            sb.append("  消息数: ").append(msgCount).append("\n");
+            sb.append("  工具调用: ").append(toolCalls).append("\n");
+            if (tracker != null) {
+                sb.append("  请求次数: ").append(tracker.getRequestCount()).append("\n");
+                sb.append("  估算 token: ").append(tracker.getTotalTokens()).append("\n");
+            }
+            sb.append("  output_style: ").append(outputStyle).append("\n");
+            sb.append("  vim_mode: ").append(vimEnabled ? "on" : "off").append("\n");
+            sb.append("  voice_mode: ").append(voiceEnabled ? "on" : "off").append("\n");
+            sb.append("  effort: ").append(effort).append("\n");
+            sb.append("  passes: ").append(passes);
+    
             return CompletableFuture.completedFuture(CommandResult.success(sb.toString()));
+        });
+    }
+    
+    /**
+     * /output-style - 输出样式管理
+     */
+    public static SlashCommand createOutputStyleCommand() {
+        return cmd("output-style", "输出样式", (args, ctx, ec) -> {
+            Settings settings = ctx.getSettings();
+            AppStateStore stateStore = ctx.getAppStateStore();
+    
+            List<OutputStyle> styles = OutputStyleLoader.loadOutputStyles();
+            Map<String, OutputStyle> available = styles.stream()
+                    .collect(Collectors.toMap(OutputStyle::getName, s -> s));
+    
+            // 读取当前样式
+            String current = settings != null ? settings.getOutputStyle() : "default";
+            if (stateStore != null) {
+                current = stateStore.get().getOutputStyle();
+            }
+    
+            String joined = joinArgs(args);
+            String[] parts = joined.split("\\s+", 2);
+            String subcmd = parts[0];
+    
+            if (joined.isEmpty() || "show".equals(subcmd)) {
+                return CompletableFuture.completedFuture(
+                        CommandResult.success("输出样式: " + current));
+            }
+    
+            if ("list".equals(subcmd)) {
+                String list = styles.stream()
+                        .map(s -> s.getName() + " [" + s.getSource() + "]")
+                        .collect(Collectors.joining("\n"));
+                return CompletableFuture.completedFuture(CommandResult.success(list));
+            }
+    
+            if ("set".equals(subcmd) && parts.length == 2) {
+                String name = parts[1].trim();
+                if (!available.containsKey(name)) {
+                    return CompletableFuture.completedFuture(
+                            CommandResult.error("未知输出样式: " + name
+                                    + "\n可用样式: "
+                                    + available.keySet().stream().sorted()
+                                    .collect(Collectors.joining(", "))));
+                }
+                if (settings != null) {
+                    settings.setOutputStyle(name);
+                    settings.save();
+                }
+                if (stateStore != null) {
+                    stateStore.set(s -> s.setOutputStyle(name));
+                }
+                return CompletableFuture.completedFuture(
+                        CommandResult.success("输出样式已设置为: " + name));
+            }
+    
+            return CompletableFuture.completedFuture(
+                    CommandResult.error("用法: /output-style [show|list|set NAME]"));
         });
     }
 
@@ -224,12 +319,76 @@ public class SystemCommandHandler {
             }
 
             String joined = joinArgs(args);
-            if (joined.isEmpty() || "show".equals(joined)) {
-                return CompletableFuture.completedFuture(CommandResult.success("Vim 模式: 暂未实现"));
+            AppStateStore stateStore = ctx.getAppStateStore();
+
+            // 读取当前状态
+            boolean current = settings.isVimEnabled();
+            if (stateStore != null) {
+                current = stateStore.get().isVimEnabled();
             }
 
-            return CompletableFuture.completedFuture(CommandResult.success("Vim 模式功能待完善"));
+            if (joined.isEmpty() || "show".equals(joined)) {
+                return CompletableFuture.completedFuture(
+                        CommandResult.success("Vim 模式: " + (current ? "on" : "off")));
+            }
+
+            boolean newValue;
+            switch (joined) {
+                case "on"     -> newValue = true;
+                case "off"    -> newValue = false;
+                case "toggle" -> newValue = !current;
+                default -> {
+                    return CompletableFuture.completedFuture(
+                            CommandResult.error("用法: /vim [show|on|off|toggle]"));
+                }
+            }
+
+            settings.setVimEnabled(newValue);
+            settings.save();
+            if (stateStore != null) {
+                stateStore.set(s -> s.setVimEnabled(newValue));
+            }
+
+            return CompletableFuture.completedFuture(
+                    CommandResult.success("Vim 模式已" + (newValue ? "开启" : "关闭")));
         });
+    }
+
+    /**
+     * 语音能力诊断结果
+     */
+    public record VoiceDiagnostics(boolean available, String reason, String recorder) {
+        public VoiceDiagnostics(boolean available, String reason) {
+            this(available, reason, null);
+        }
+    }
+
+    /**
+     * 检测当前环境是否支持语音输入。
+     * 依次尝试在 PATH 中查找 sox、ffmpeg、arecord。
+     */
+    public static VoiceDiagnostics inspectVoiceCapabilities() {
+        String[] recorders = {"sox", "ffmpeg", "arecord"};
+        for (String rec : recorders) {
+            if (findInPath(rec) != null) {
+                return new VoiceDiagnostics(true, "voice shell is available", rec);
+            }
+        }
+        return new VoiceDiagnostics(false,
+                "no supported recorder found (expected sox, ffmpeg, or arecord)");
+    }
+
+    /** 在 PATH 中查找可执行文件，找到则返回其完整路径，找不到返回 null。 */
+    private static String findInPath(String executable) {
+        String pathEnv = System.getenv("PATH");
+        if (pathEnv == null) return null;
+        for (String dir : pathEnv.split(File.pathSeparator)) {
+            File f = new File(dir, executable);
+            if (f.isFile() && f.canExecute()) {
+                return f.getAbsolutePath();
+            }
+        }
+        return null;
     }
 
     /**
@@ -237,13 +396,79 @@ public class SystemCommandHandler {
      */
     public static SlashCommand createVoiceCommand() {
         return cmd("voice", "语音模式", (args, ctx, ec) -> {
-            String joined = joinArgs(args);
-            if (joined.isEmpty() || "show".equals(joined)) {
-                return CompletableFuture.completedFuture(
-                        CommandResult.success("语音模式: 未实现\n当前不支持语音输入/输出"));
+            Settings settings = ctx.getSettings();
+            AppStateStore stateStore = ctx.getAppStateStore();
+
+            VoiceDiagnostics diagnostics = inspectVoiceCapabilities();
+
+            // 读取当前状态
+            boolean current = settings != null && settings.isVoiceEnabled();
+            if (stateStore != null) {
+                current = stateStore.get().isVoiceEnabled();
             }
 
-            return CompletableFuture.completedFuture(CommandResult.success("语音模式功能待完善"));
+            String joined = joinArgs(args);
+            String[] parts = joined.split("\\s+", 2);
+            String subcmd = parts[0];
+
+            if (joined.isEmpty() || "show".equals(subcmd)) {
+                return CompletableFuture.completedFuture(CommandResult.success(
+                        "语音模式: " + (current ? "on" : "off") + "\n"
+                        + "可用: " + (diagnostics.available() ? "yes" : "no") + "\n"
+                        + "原因: " + diagnostics.reason()
+                        + (diagnostics.recorder() != null ? "\n录音器: " + diagnostics.recorder() : "")));
+            }
+
+            if ("keyterms".equals(subcmd)) {
+                String text = parts.length > 1 ? parts[1].trim() : "";
+                if (text.isEmpty()) {
+                    return CompletableFuture.completedFuture(
+                            CommandResult.error("用法: /voice keyterms <文本>"));
+                }
+                // 简单分词提取关键词（去除常用停用词）
+                String[] words = text.split("\\s+");
+                List<String> stopWords = List.of("the", "a", "an", "is", "in", "on", "at",
+                        "to", "of", "and", "or", "for", "的", "了", "在", "是", "和");
+                String keyterms = Arrays.stream(words)
+                        .filter(w -> w.length() > 2 && !stopWords.contains(w.toLowerCase()))
+                        .distinct()
+                        .limit(10)
+                        .collect(Collectors.joining(", "));
+                return CompletableFuture.completedFuture(
+                        CommandResult.success("关键词: " + (keyterms.isEmpty() ? "(无)": keyterms)));
+            }
+
+            boolean newValue;
+            switch (subcmd) {
+                case "on"     -> newValue = true;
+                case "off"    -> newValue = false;
+                case "toggle" -> newValue = !current;
+                default -> {
+                    return CompletableFuture.completedFuture(
+                            CommandResult.error("用法: /voice [show|on|off|toggle|keyterms <文本>]"));
+                }
+            }
+
+            if (newValue && !diagnostics.available()) {
+                return CompletableFuture.completedFuture(
+                        CommandResult.error("无法开启语音模式: " + diagnostics.reason()));
+            }
+
+            if (settings != null) {
+                settings.setVoiceEnabled(newValue);
+                settings.save();
+            }
+            if (stateStore != null) {
+                boolean finalNewValue = newValue;
+                stateStore.set(s -> {
+                    s.setVoiceEnabled(finalNewValue);
+                    s.setVoiceAvailable(diagnostics.available());
+                    s.setVoiceReason(diagnostics.reason());
+                });
+            }
+
+            return CompletableFuture.completedFuture(
+                    CommandResult.success("语音模式已" + (newValue ? "开启" : "关闭")));
         });
     }
 

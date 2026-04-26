@@ -277,8 +277,20 @@ public class SessionCommandHandler {
      * /context - 显示系统提示词
      */
     public static SlashCommand createContextCommand() {
-        return cmd("context", "系统提示词", (args, ctx, ec) ->
-                CompletableFuture.completedFuture(CommandResult.success("系统提示词功能待完善")));
+        return cmd("context", "系统提示词", (args, ctx, ec) -> {
+            QueryEngine engine = ctx.getEngine();
+            if (engine == null) {
+                return CompletableFuture.completedFuture(
+                        CommandResult.error("查询引擎未初始化"));
+            }
+            String prompt = engine.getSystemPrompt();
+            if (prompt == null || prompt.isBlank()) {
+                return CompletableFuture.completedFuture(
+                        CommandResult.success("系统提示词未设置"));
+            }
+            return CompletableFuture.completedFuture(
+                    CommandResult.success("=== 当前系统提示词 ===\n" + prompt));
+        });
     }
 
     /**

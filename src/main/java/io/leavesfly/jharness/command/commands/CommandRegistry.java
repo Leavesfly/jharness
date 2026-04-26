@@ -94,7 +94,26 @@ public class CommandRegistry {
         }));
         register(cmd("exit", "退出程序", (a, c, e) -> CompletableFuture.completedFuture(CommandResult.success("exit"))));
         register(cmd("clear", "清空历史", (a, c, e) -> CompletableFuture.completedFuture(CommandResult.success("clear"))));
-        register(cmd("status", "会话状态", (a, c, e) -> CompletableFuture.completedFuture(CommandResult.success("状态: 就绪"))));
+        register(cmd("status", "会话状态", (args, ctx, ec) -> {
+            io.leavesfly.jharness.core.engine.QueryEngine engine = ctx.getEngine();
+            io.leavesfly.jharness.core.Settings settings = ctx.getSettings();
+            int msgCount = engine != null ? engine.getMessages().size() : 0;
+            String usage;
+            if (engine != null && engine.getCostTracker() != null) {
+                usage = "input=" + engine.getCostTracker().getTotalInputTokens()
+                        + " output=" + engine.getCostTracker().getTotalOutputTokens();
+            } else {
+                usage = "N/A";
+            }
+            String effort = settings != null ? settings.getEffort() : "medium";
+            int passes = settings != null ? settings.getPasses() : 1;
+            return java.util.concurrent.CompletableFuture.completedFuture(
+                    CommandResult.success(
+                            "Messages: " + msgCount + "\n"
+                            + "Usage: " + usage + "\n"
+                            + "Effort: " + effort + "\n"
+                            + "Passes: " + passes));
+        }));
         register(cmd("version", "版本", (a, c, e) -> CompletableFuture.completedFuture(CommandResult.success("JHarness 0.1.0"))));
         
         // 配置命令
@@ -142,6 +161,7 @@ public class CommandRegistry {
         register(SystemCommandHandler.createHooksCommand());
         register(SystemCommandHandler.createVimCommand());
         register(SystemCommandHandler.createVoiceCommand());
+        register(SystemCommandHandler.createOutputStyleCommand());
 
         // 扩展配置命令
         register(ConfigPlusCommandHandler.createEffortCommand());

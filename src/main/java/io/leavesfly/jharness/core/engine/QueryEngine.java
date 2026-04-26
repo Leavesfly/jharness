@@ -168,6 +168,13 @@ public class QueryEngine implements AutoCloseable {
     }
 
     /**
+     * 获取当前运行时系统提示词
+     */
+    public String getSystemPrompt() {
+        return systemPrompt;
+    }
+
+    /**
      * 清空消息
      */
     public void clear() {

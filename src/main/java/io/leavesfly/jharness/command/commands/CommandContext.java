@@ -2,6 +2,7 @@ package io.leavesfly.jharness.command.commands;
 
 import io.leavesfly.jharness.core.Settings;
 import io.leavesfly.jharness.core.engine.QueryEngine;
+import io.leavesfly.jharness.core.state.AppStateStore;
 import io.leavesfly.jharness.session.permissions.PermissionChecker;
 import io.leavesfly.jharness.tools.ToolRegistry;
 
@@ -18,14 +19,22 @@ public class CommandContext {
     private final ToolRegistry toolRegistry;
     private final PermissionChecker permissionChecker;
     private final Settings settings;
+    private final AppStateStore appStateStore;
 
     public CommandContext(Path cwd, QueryEngine engine, ToolRegistry toolRegistry,
                           PermissionChecker permissionChecker, Settings settings) {
+        this(cwd, engine, toolRegistry, permissionChecker, settings, null);
+    }
+
+    public CommandContext(Path cwd, QueryEngine engine, ToolRegistry toolRegistry,
+                          PermissionChecker permissionChecker, Settings settings,
+                          AppStateStore appStateStore) {
         this.cwd = cwd;
         this.engine = engine;
         this.toolRegistry = toolRegistry;
         this.permissionChecker = permissionChecker;
         this.settings = settings;
+        this.appStateStore = appStateStore;
     }
 
     public Path getCwd() {
@@ -46,5 +55,9 @@ public class CommandContext {
 
     public Settings getSettings() {
         return settings;
+    }
+
+    public AppStateStore getAppStateStore() {
+        return appStateStore;
     }
 }

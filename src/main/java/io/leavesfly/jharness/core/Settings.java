@@ -28,6 +28,7 @@ public class Settings {
     private boolean vimEnabled = false;
     private boolean voiceEnabled = false;
     private boolean fastMode = false;
+    private String outputStyle = "default";
     private Map<String, Object> mcpServers = new HashMap<>();
     private Map<String, Boolean> enabledPlugins = new HashMap<>();
     private List<String> allowedTools = new ArrayList<>();
@@ -183,6 +184,14 @@ public class Settings {
         this.fastMode = fastMode;
     }
 
+    public String getOutputStyle() {
+        return outputStyle;
+    }
+
+    public void setOutputStyle(String outputStyle) {
+        this.outputStyle = outputStyle;
+    }
+
     public Map<String, Object> getMcpServers() {
         return mcpServers;
     }
@@ -215,6 +224,7 @@ public class Settings {
             case "theme" -> { this.theme = value; yield true; }
             case "provider" -> { this.provider = value; yield true; }
             case "fastMode" -> { this.fastMode = Boolean.parseBoolean(value); yield true; }
+            case "outputStyle" -> { this.outputStyle = value; yield true; }
             case "effort" -> { this.effort = value; yield true; }
             case "passes" -> { try { this.passes = Integer.parseInt(value); yield true; } catch (NumberFormatException e) { yield false; } }
             default -> false;
@@ -229,6 +239,7 @@ public class Settings {
             case "theme" -> theme;
             case "provider" -> provider;
             case "fastMode" -> String.valueOf(fastMode);
+            case "outputStyle" -> outputStyle;
             case "effort" -> effort;
             case "passes" -> String.valueOf(passes);
             default -> null;
@@ -281,6 +292,7 @@ public class Settings {
             if (root.hasNonNull("theme")) settings.theme = root.get("theme").asText();
             if (root.hasNonNull("provider")) settings.provider = root.get("provider").asText();
             if (root.hasNonNull("effort")) settings.effort = root.get("effort").asText();
+            if (root.hasNonNull("outputStyle")) settings.outputStyle = root.get("outputStyle").asText();
             if (root.hasNonNull("systemPrompt")) settings.systemPrompt = root.get("systemPrompt").asText();
 
             if (root.hasNonNull("permissionMode")) {
