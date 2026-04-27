@@ -8,12 +8,14 @@ import org.slf4j.LoggerFactory;
 
 import java.io.BufferedReader;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.regex.Pattern;
 
 /**
@@ -115,6 +117,10 @@ public class BashTool extends BaseTool<BashToolInput> {
 
     /**
      * 一次性进程模式：每次命令独立进程，环境不共享。
+     *
+     * 超时语义修复：旧实现先 while(readLine!=null) 读完所有输出再 waitFor(timeout)，
+     * 导致当子进程持续输出但不退出时，readLine 永远阻塞，waitFor 的超时永不生效。
+     * 这里改为启动独立的 drain 线程读取输出，主线程 waitFor(timeout) 控制真实超时。
      */
     private ToolResult runOneShot(BashToolInput input, ToolExecutionContext context)
             throws IOException, InterruptedException {
@@ -126,22 +132,48 @@ public class BashTool extends BaseTool<BashToolInput> {
         Process process = pb.start();
 
         StringBuilder output = new StringBuilder();
-        try (BufferedReader reader = new BufferedReader(
-                new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
-            String line;
-            while ((line = reader.readLine()) != null) {
-                output.append(line).append("\n");
+        AtomicReference<IOException> readError = new AtomicReference<>();
+        Thread drainer = new Thread(() -> {
+            try (BufferedReader reader = new BufferedReader(
+                    new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
+                char[] buffer = new char[4096];
+                int read;
+                while ((read = reader.read(buffer)) != -1) {
+                    synchronized (output) {
+                        output.append(buffer, 0, read);
+                        if (output.length() > MAX_OUTPUT_LENGTH * 2) {
+                            // 避免超长命令下输出无限增长占内存；真正截断在返回时进行
+                            output.setLength(MAX_OUTPUT_LENGTH * 2);
+                            break;
+                        }
+                    }
+                }
+            } catch (IOException e) {
+                readError.set(e);
             }
-        }
+        }, "jh-bash-drain");
+        drainer.setDaemon(true);
+        drainer.start();
 
         boolean finished = process.waitFor(input.getTimeout(), TimeUnit.SECONDS);
         if (!finished) {
             process.destroyForcibly();
+            // 等 drainer 收尾，但不无限等待
+            drainer.join(TimeUnit.SECONDS.toMillis(2));
             return ToolResult.error("命令执行超时 (" + input.getTimeout() + "秒)");
+        }
+        // 进程已退出，等 drainer 把剩余输出收完
+        drainer.join(TimeUnit.SECONDS.toMillis(2));
+        if (readError.get() != null) {
+            logger.warn("读取 bash 输出时出现 IO 异常", readError.get());
         }
 
         int exitCode = process.exitValue();
-        String result = truncateOutput(output.toString());
+        String snapshot;
+        synchronized (output) {
+            snapshot = output.toString();
+        }
+        String result = truncateOutput(snapshot);
         return new ToolResult(
                 String.format("退出码: %d\n输出:\n%s", exitCode, result),
                 exitCode != 0);
@@ -211,17 +243,52 @@ public class BashTool extends BaseTool<BashToolInput> {
      * 检测命令中是否包含写操作符（重定向、管道写等）
      *
      * 这是一个启发式检测，用于过滤掉明显的写操作命令。
+     *
+     * 修复点：旧实现直接对原始字符串正则 ">"，会把 `echo "a>b"`、`echo 'a>b'` 中引号里的
+     * 字面量误判为重定向，进而把这类只读操作错判为写操作。这里先剥离引号内的字面量字符，
+     * 再做重定向检测，避免误报。
      */
     private static boolean containsWriteOperator(String command) {
-        // 检测输出重定向（> 和 >>），排除 >= 和 => 等比较符
-        if (command.matches(".*(?<![=><!])>(?!=).*")) {
+        String stripped = stripQuoted(command);
+        // 检测输出重定向（> 和 >>），排除 >=、=>、<> 等比较/流符号
+        if (stripped.matches(".*(?<![=><!])>(?!=).*")) {
             return true;
         }
         // 检测 tee 命令（将输出写入文件）
-        if (command.matches(".*\\btee\\b.*")) {
+        if (stripped.matches(".*\\btee\\b.*")) {
             return true;
         }
         return false;
+    }
+
+    /**
+     * 去除命令中所有引号包裹的字面量（'...' 与 "..."），
+     * 同时保留引号位置为占位空格，避免 token 边界改变。
+     *
+     * 仅用于启发式检测，不涉及命令实际执行，故无需完整 shell 词法分析。
+     */
+    private static String stripQuoted(String command) {
+        StringBuilder sb = new StringBuilder(command.length());
+        char quote = 0;
+        for (int i = 0; i < command.length(); i++) {
+            char c = command.charAt(i);
+            if (quote == 0) {
+                if (c == '\'' || c == '"') {
+                    quote = c;
+                    sb.append(' ');
+                } else {
+                    sb.append(c);
+                }
+            } else {
+                if (c == quote) {
+                    quote = 0;
+                    sb.append(' ');
+                } else {
+                    sb.append(' '); // 字面量内容一律替换为空格，消除引号内 > 等字符
+                }
+            }
+        }
+        return sb.toString();
     }
 
     /**

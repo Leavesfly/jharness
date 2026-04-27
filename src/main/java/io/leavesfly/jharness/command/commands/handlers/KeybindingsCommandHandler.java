@@ -12,6 +12,7 @@ import java.util.TreeMap;
 import java.util.concurrent.CompletableFuture;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.leavesfly.jharness.util.JacksonUtils;
 
 /**
  * 快捷键命令处理器
@@ -20,7 +21,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
  */
 public class KeybindingsCommandHandler {
 
-    private static final ObjectMapper MAPPER = new ObjectMapper();
+    private static final ObjectMapper MAPPER = JacksonUtils.MAPPER;
 
     public static SlashCommand createKeybindingsCommand() {
         return new SimpleSlashCommand("keybindings", "显示当前快捷键绑定", (args, ctx, ec) -> {

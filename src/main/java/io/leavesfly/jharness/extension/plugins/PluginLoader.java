@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.leavesfly.jharness.core.Settings;
 import io.leavesfly.jharness.extension.skills.SkillDefinition;
 import io.leavesfly.jharness.extension.skills.SkillLoader;
+import io.leavesfly.jharness.util.JacksonUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -22,7 +23,7 @@ import java.util.stream.Stream;
  */
 public class PluginLoader {
     private static final Logger logger = LoggerFactory.getLogger(PluginLoader.class);
-    private static final ObjectMapper MAPPER = new ObjectMapper();
+    private static final ObjectMapper MAPPER = JacksonUtils.MAPPER;
 
     /**
      * 发现所有插件路径

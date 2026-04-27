@@ -259,6 +259,12 @@ public class QueryEngine implements AutoCloseable {
                     }
 
                     // 记录使用量（F-P0-5：可能抛 BudgetExceededException）
+                    long turnInputTokens = 0L;
+                    long turnOutputTokens = 0L;
+                    if (response.getUsage() != null) {
+                        turnInputTokens = response.getUsage().getInputTokens();
+                        turnOutputTokens = response.getUsage().getOutputTokens();
+                    }
                     try {
                         costTracker.addUsage(response.getUsage());
                     } catch (BudgetExceededException bex) {
@@ -266,6 +272,21 @@ public class QueryEngine implements AutoCloseable {
                         eventConsumer.accept(new io.leavesfly.jharness.core.engine.stream.AssistantTurnComplete(
                                 "⚠ " + bex.getMessage()));
                         return;
+                    }
+
+                    // 可观测性：每轮推送一次 UsageReport，让 UI 实时展示 token / 成本
+                    // 注意：必须在 addUsage 之后采样，才能反映最新累计值
+                    try {
+                        eventConsumer.accept(new io.leavesfly.jharness.core.engine.stream.UsageReport(
+                                turnInputTokens,
+                                turnOutputTokens,
+                                costTracker.getTotalTokens(),
+                                costTracker.getSessionCostUsd().doubleValue(),
+                                costTracker.getDailyCostUsd().doubleValue(),
+                                costTracker.getDailyBudgetUsd().doubleValue()));
+                    } catch (Exception reportErr) {
+                        // UsageReport 仅用于可观测性，消费端异常不能影响主循环
+                        logger.debug("推送 UsageReport 失败（忽略）: {}", reportErr.getMessage());
                     }
 
                     // 检查是否有工具调用

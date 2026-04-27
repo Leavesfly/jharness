@@ -1,10 +1,8 @@
 package io.leavesfly.jharness.command.commands.handlers;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.SerializationFeature;
-import com.fasterxml.jackson.datatype.jdk8.Jdk8Module;
-import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import io.leavesfly.jharness.command.commands.CommandContext;
+import io.leavesfly.jharness.util.JacksonUtils;
 import io.leavesfly.jharness.command.commands.CommandResult;
 import io.leavesfly.jharness.command.commands.SlashCommand;
 import io.leavesfly.jharness.command.commands.SimpleSlashCommand;
@@ -34,11 +32,8 @@ import java.util.concurrent.CompletableFuture;
 public class SessionCommandHandler {
 
     private static final Logger logger = LoggerFactory.getLogger(SessionCommandHandler.class);
-    private static final ObjectMapper JSON = new ObjectMapper()
-            .registerModule(new Jdk8Module())
-            .registerModule(new JavaTimeModule())
-            .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS)
-            .enable(SerializationFeature.INDENT_OUTPUT);
+    // 复用全局 PRETTY_MAPPER：统一 JSR-310 / Jdk8 / NON_NULL / 不启用默认多态等关键配置
+    private static final ObjectMapper JSON = JacksonUtils.PRETTY_MAPPER;
 
     private static String joinArgs(List<String> args) {
         return args == null || args.isEmpty() ? "" : String.join(" ", args);
@@ -433,7 +428,8 @@ public class SessionCommandHandler {
         try {
             Files.copy(exportPath, taggedMd, StandardCopyOption.REPLACE_EXISTING);
         } catch (IOException e) {
-            // ignore
+            // 复制失败不影响主流程（快照 JSON 已保存），但必须留下痕迹便于排查
+            logger.warn("复制会话 markdown 到标签文件失败: src={}, dst={}", exportPath, taggedMd, e);
         }
 
         String msg = String.format(
@@ -449,7 +445,8 @@ public class SessionCommandHandler {
         try {
             Files.createDirectories(sessionDir);
         } catch (IOException e) {
-            // ignore
+            // 目录创建失败时不终止流程（Files.writeString 会再次抛出明确异常），但记录 warn 日志
+            logger.warn("创建会话目录失败: {}", sessionDir, e);
         }
 
         Path path = sessionDir.resolve("transcript.md");
@@ -601,11 +598,16 @@ public class SessionCommandHandler {
         try {
             ProcessBuilder pb = new ProcessBuilder("pbcopy");
             Process process = pb.start();
-            process.getOutputStream().write(text.getBytes());
+            // UTF-8 显式指定：避免平台默认字符集导致 macOS 以外的系统 / 非 ASCII 内容乱码
+            process.getOutputStream().write(text.getBytes(java.nio.charset.StandardCharsets.UTF_8));
             process.getOutputStream().close();
             process.waitFor();
-        } catch (Exception e) {
-            // 剪贴板不可用，忽略
+        } catch (IOException | InterruptedException e) {
+            // 剪贴板不可用（非 macOS / pbcopy 缺失）属于合理降级，debug 级别即可
+            logger.debug("复制到剪贴板失败（可能 pbcopy 不可用）: {}", e.getMessage());
+            if (e instanceof InterruptedException) {
+                Thread.currentThread().interrupt();
+            }
         }
     }
 }

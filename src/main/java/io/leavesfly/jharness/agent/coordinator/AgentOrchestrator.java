@@ -3,12 +3,15 @@ package io.leavesfly.jharness.agent.coordinator;
 import io.leavesfly.jharness.core.engine.QueryEngine;
 import io.leavesfly.jharness.tools.ToolRegistry;
 import io.leavesfly.jharness.core.engine.model.ConversationMessage;
+import io.leavesfly.jharness.core.engine.stream.AssistantTextDelta;
 import io.leavesfly.jharness.core.engine.stream.StreamEvent;
+import io.leavesfly.jharness.core.engine.stream.ToolExecutionCompleted;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.*;
 import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 
 /**
@@ -37,7 +40,26 @@ public class AgentOrchestrator {
     public AgentOrchestrator(QueryEngine queryEngine, ToolRegistry toolRegistry) {
         this.queryEngine = queryEngine;
         this.toolRegistry = toolRegistry;
-        this.executorService = Executors.newCachedThreadPool();
+        // 有界线程池 + 命名 ThreadFactory：
+        //  - 避免 newCachedThreadPool 在高并发下无界扩展导致 OOM 或线程爆炸；
+        //  - 队列使用 LinkedBlockingQueue 限定上限，超出则由 CallerRuns 回压，防止静默丢任务；
+        //  - 线程命名 jharness-agent-N，便于 jstack / 日志定位。
+        int cores = Runtime.getRuntime().availableProcessors();
+        int maxPool = Math.max(8, cores * 2);
+        AtomicInteger seq = new AtomicInteger();
+        this.executorService = new ThreadPoolExecutor(
+                Math.min(4, maxPool),
+                maxPool,
+                60L, TimeUnit.SECONDS,
+                new LinkedBlockingQueue<>(128),
+                r -> {
+                    Thread t = new Thread(r, "jharness-agent-" + seq.incrementAndGet());
+                    t.setDaemon(false);
+                    t.setUncaughtExceptionHandler((thread, ex) ->
+                            logger.error("Agent 线程未捕获异常: {}", thread.getName(), ex));
+                    return t;
+                },
+                new ThreadPoolExecutor.CallerRunsPolicy());
     }
 
     public void setQueryEngineFactory(QueryEngineFactory factory) {
@@ -145,9 +167,21 @@ public class AgentOrchestrator {
                 messages.add(ConversationMessage.userText(task.getPrompt()));
                 
                 // 执行查询，必须等待 CompletableFuture 完成后再读取 output
+                //
+                // 修复：旧实现使用 event.toString() 拼接输出，但 StreamEvent 的 toString 是
+                //      Java 默认的对象身份字符串（形如 AssistantTextDelta@abc123），拿不到真实文本；
+                //      导致上层拿到的 output 是一堆无意义的对象 hash 而非模型实际响应。
+                //      这里只对 AssistantTextDelta 累积文本，ToolExecutionCompleted 累积工具输出摘要。
                 StringBuilder output = new StringBuilder();
                 agentEngine.submitMessage(task.getPrompt(), event -> {
-                    output.append(event.toString()).append("\n");
+                    if (event instanceof AssistantTextDelta delta) {
+                        output.append(delta.getText());
+                    } else if (event instanceof ToolExecutionCompleted done) {
+                        output.append("\n[tool:").append(done.getToolName()).append("] ")
+                              .append(done.isError() ? "✗ " : "✓ ")
+                              .append(done.getResult() == null ? "" : done.getResult())
+                              .append('\n');
+                    }
                     if (eventConsumer != null) {
                         eventConsumer.accept(event);
                     }

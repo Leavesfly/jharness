@@ -6,6 +6,8 @@ import io.leavesfly.jharness.command.commands.SimpleSlashCommand;
 import io.leavesfly.jharness.core.Settings;
 
 import io.leavesfly.jharness.extension.plugins.PluginInstaller;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -17,6 +19,8 @@ import java.util.concurrent.CompletableFuture;
  * 处理: /effort, /passes, /fast, /plugin, /reload-plugins, /init
  */
 public class ConfigPlusCommandHandler {
+
+    private static final Logger logger = LoggerFactory.getLogger(ConfigPlusCommandHandler.class);
 
     private static String joinArgs(List<String> args) {
         return args == null || args.isEmpty() ? "" : String.join(" ", args);
@@ -208,8 +212,9 @@ public class ConfigPlusCommandHandler {
             int count = 0;
             try (var stream = Files.list(pluginsDir)) {
                 count = (int) stream.filter(Files::isDirectory).count();
-            } catch (Exception e) {
-                // ignore
+            } catch (java.io.IOException e) {
+                // 权限不足 / 目录被并发删除等异常：不终止命令执行，但必须有日志痕迹
+                logger.debug("枚举插件目录失败: {}", pluginsDir, e);
             }
 
             return CompletableFuture.completedFuture(

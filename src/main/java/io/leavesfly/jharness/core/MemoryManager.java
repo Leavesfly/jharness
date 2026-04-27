@@ -1,8 +1,7 @@
 package io.leavesfly.jharness.core;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.SerializationFeature;
-import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import io.leavesfly.jharness.util.JacksonUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -29,10 +28,9 @@ public class MemoryManager {
 
     public MemoryManager(Path memoryDir) {
         this.memoryDir = memoryDir;
-        this.mapper = new ObjectMapper()
-                .registerModule(new JavaTimeModule())
-                .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS)
-                .enable(SerializationFeature.INDENT_OUTPUT);
+        // 复用全局 PRETTY_MAPPER：已启用 JavaTimeModule + NON_NULL + INDENT_OUTPUT，
+        // 无需每个 MemoryManager 实例再单独构建一套配置
+        this.mapper = JacksonUtils.PRETTY_MAPPER;
         try {
             Files.createDirectories(memoryDir);
         } catch (IOException e) {

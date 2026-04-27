@@ -15,6 +15,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.leavesfly.jharness.util.JacksonUtils;
 
 /**
  * Bridge 命令处理器
@@ -23,7 +24,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
  */
 public class BridgeCommandHandler {
 
-    private static final ObjectMapper MAPPER = new ObjectMapper();
+    private static final ObjectMapper MAPPER = JacksonUtils.MAPPER;
     private static final Map<String, BridgeSession> sessions = new ConcurrentHashMap<>();
 
     public static SlashCommand createBridgeCommand() {

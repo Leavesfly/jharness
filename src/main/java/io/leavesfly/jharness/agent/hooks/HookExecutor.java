@@ -2,6 +2,7 @@ package io.leavesfly.jharness.agent.hooks;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.leavesfly.jharness.agent.hooks.schemas.HookDefinition;
+import io.leavesfly.jharness.util.JacksonUtils;
 import io.leavesfly.jharness.util.UrlSafetyValidator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -40,7 +41,7 @@ import java.util.regex.Pattern;
  */
 public class HookExecutor {
     private static final Logger logger = LoggerFactory.getLogger(HookExecutor.class);
-    private static final ObjectMapper MAPPER = new ObjectMapper();
+    private static final ObjectMapper MAPPER = JacksonUtils.MAPPER;
 
     /** Hook 递归最大深度。3 层已足够覆盖"Hook → Hook 触发 Agent → Agent 里又触发 Hook"场景。 */
     private static final int MAX_HOOK_DEPTH = 3;

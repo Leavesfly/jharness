@@ -1,6 +1,7 @@
 package io.leavesfly.jharness.tools;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.leavesfly.jharness.util.JacksonUtils;
 
 import java.lang.reflect.Field;
 import java.util.List;
@@ -15,7 +16,12 @@ import java.util.concurrent.CompletableFuture;
  * @param <T> 工具输入类型
  */
 public abstract class BaseTool<T> {
-    protected static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
+    /**
+     * 统一使用 {@link JacksonUtils#MAPPER}：
+     * - 避免每个工具子类各自 new 一个 ObjectMapper（内存浪费 + 行为不一致）；
+     * - 继承全局的 JSR-310 / Jdk8Module / NON_NULL 等安全配置。
+     */
+    protected static final ObjectMapper OBJECT_MAPPER = JacksonUtils.MAPPER;
 
     /**
      * 获取工具名称

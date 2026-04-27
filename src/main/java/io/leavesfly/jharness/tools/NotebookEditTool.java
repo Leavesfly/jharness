@@ -1,7 +1,6 @@
 package io.leavesfly.jharness.tools;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.leavesfly.jharness.tools.input.NotebookEditToolInput;
@@ -22,7 +21,7 @@ import java.util.concurrent.CompletableFuture;
  */
 public class NotebookEditTool extends BaseTool<NotebookEditToolInput> {
     private static final Logger logger = LoggerFactory.getLogger(NotebookEditTool.class);
-    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
+    // 复用父类 BaseTool.OBJECT_MAPPER（即 JacksonUtils.MAPPER），避免重复实例化并保持行为一致
 
     @Override
     public String getName() {

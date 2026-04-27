@@ -10,10 +10,13 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 
 /**
@@ -32,8 +35,21 @@ public class CronRegistry {
 
     private final Path registryPath;
     private final List<Map<String, Object>> jobs = java.util.Collections.synchronizedList(new ArrayList<>());
-    private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(2);
-    private final Map<String, ScheduledFuture<?>> scheduledTasks = new HashMap<>();
+    // 命名 ThreadFactory + daemon=true，使 JVM 关闭时不会被 cron 调度线程阻塞退出
+    private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(2, new ThreadFactory() {
+        private final AtomicInteger counter = new AtomicInteger();
+        @Override
+        public Thread newThread(Runnable r) {
+            Thread t = new Thread(r, "jharness-cron-" + counter.incrementAndGet());
+            t.setDaemon(true);
+            t.setUncaughtExceptionHandler((thread, ex) ->
+                    LoggerFactory.getLogger(CronRegistry.class)
+                            .error("cron 调度线程未捕获异常: {}", thread.getName(), ex));
+            return t;
+        }
+    });
+    // 修复并发 bug：旧实现用 HashMap 却在 synchronized(jobsLock) 之外访问，存在数据竞争
+    private final Map<String, ScheduledFuture<?>> scheduledTasks = new ConcurrentHashMap<>();
     private final Object jobsLock = new Object();
     private CronJobExecutor jobExecutor;
 

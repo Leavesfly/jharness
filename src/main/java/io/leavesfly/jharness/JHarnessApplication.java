@@ -9,6 +9,7 @@ import io.leavesfly.jharness.core.engine.stream.AssistantTurnComplete;
 import io.leavesfly.jharness.core.engine.stream.StreamEvent;
 import io.leavesfly.jharness.core.engine.stream.ToolExecutionStarted;
 import io.leavesfly.jharness.core.engine.stream.ToolExecutionCompleted;
+import io.leavesfly.jharness.core.engine.stream.UsageReport;
 import io.leavesfly.jharness.integration.mcp.McpClientManager;
 import io.leavesfly.jharness.session.permissions.PermissionChecker;
 import io.leavesfly.jharness.session.permissions.PermissionMode;
@@ -211,17 +212,17 @@ public class JHarnessApplication implements Callable<Integer> {
      * 运行单次查询模式
      *
      * 使用 try-with-resources 确保 QueryEngine（及其持有的 ApiClient）在完成后被正确关闭。
+     * 结束时额外打印一次成本摘要，便于 CI/脚本化场景做预算核算。
      */
     private int runPrintMode(Settings settings) {
         try (QueryEngine queryEngine = buildQueryEngine(settings)) {
             System.out.println("正在处理...\n");
-            queryEngine.submitMessage(printPrompt, event -> handleStreamEventConsole(event)).join();
+            queryEngine.submitMessage(printPrompt, this::handleStreamEventConsole).join();
             System.out.println();
+            printCostSummary(queryEngine);
             return 0;
         } catch (Exception e) {
-            logger.error("单次查询失败", e);
-            System.err.println("查询失败: " + e.getMessage());
-            return 1;
+            return reportFatal("单次查询失败", e);
         }
     }
 
@@ -245,16 +246,67 @@ public class JHarnessApplication implements Callable<Integer> {
                         queryEngine, settings.getModel(), permissionMode);
                 session.start();
             }
+            // 会话正常结束时展示一次成本摘要（异常退出走 catch，不展示）
+            printCostSummary(queryEngine);
             return 0;
         } catch (Exception e) {
-            logger.error("交互式会话异常退出", e);
-            System.err.println("会话异常退出: " + e.getMessage());
-            return 1;
+            return reportFatal("交互式会话异常退出", e);
         }
     }
 
     /**
-     * 控制台模式下处理流式事件
+     * 统一 fatal 错误呈现：
+     * <ul>
+     *   <li>堆栈走 logger.error，配合日志配置可投递到文件 / 监控；</li>
+     *   <li>stderr 只输出 "前缀: 原因"，让脚本调用方解析更容易；</li>
+     *   <li>debug 模式下额外打印根因，帮助定位配置问题。</li>
+     * </ul>
+     */
+    private int reportFatal(String prefix, Throwable e) {
+        logger.error(prefix, e);
+        Throwable root = e;
+        while (root.getCause() != null && root.getCause() != root) {
+            root = root.getCause();
+        }
+        String reason = (root.getMessage() == null || root.getMessage().isBlank())
+                ? root.getClass().getSimpleName()
+                : root.getMessage();
+        System.err.println(prefix + ": " + reason);
+        if (debug && root != e) {
+            System.err.println("  根因类型: " + root.getClass().getName());
+        }
+        return 1;
+    }
+
+    /**
+     * 打印本次会话的成本摘要。不抛异常，不影响主流程。
+     */
+    private void printCostSummary(QueryEngine queryEngine) {
+        try {
+            var tracker = queryEngine.getCostTracker();
+            if (tracker.getRequestCount() == 0) {
+                return;
+            }
+            System.out.printf(
+                    "📊 用量摘要: 请求=%d, 输入=%d tok, 输出=%d tok, 会话=$%.4f, 今日=$%.4f%n",
+                    tracker.getRequestCount(),
+                    tracker.getTotalInputTokens(),
+                    tracker.getTotalOutputTokens(),
+                    tracker.getSessionCostUsd().doubleValue(),
+                    tracker.getDailyCostUsd().doubleValue());
+        } catch (Exception e) {
+            logger.debug("打印成本摘要失败（忽略）", e);
+        }
+    }
+
+    /**
+     * 控制台模式下处理流式事件。
+     *
+     * 说明：
+     * <ul>
+     *   <li>UsageReport 走 debug 日志，默认不打扰控制台输出，debug 模式下会显示；</li>
+     *   <li>AssistantTurnComplete 若携带提示文本（如"达到最大轮次限制"），需完整输出以便排障。</li>
+     * </ul>
      */
     private void handleStreamEventConsole(StreamEvent event) {
         if (event instanceof AssistantTextDelta textDelta) {
@@ -265,8 +317,17 @@ public class JHarnessApplication implements Callable<Integer> {
         } else if (event instanceof ToolExecutionCompleted toolDone) {
             String prefix = toolDone.isError() ? "❌ 工具失败: " : "✅ 工具完成: ";
             System.out.println(prefix + toolDone.getToolName());
-        } else if (event instanceof AssistantTurnComplete) {
-            System.out.println();
+        } else if (event instanceof AssistantTurnComplete turn) {
+            String msg = turn.getMessage();
+            if (msg != null && !msg.isBlank()) {
+                System.out.println();
+                System.out.println(msg);
+            } else {
+                System.out.println();
+            }
+        } else if (event instanceof UsageReport report) {
+            // 控制台模式下成本信息只打 debug 日志，避免打断用户阅读模型输出
+            logger.debug("usage: {}", report);
         }
     }
 }

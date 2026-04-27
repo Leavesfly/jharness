@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.leavesfly.jharness.integration.mcp.types.McpConnectionStatus;
+import io.leavesfly.jharness.util.JacksonUtils;
 import io.leavesfly.jharness.util.UrlSafetyValidator;
 import okhttp3.*;
 import org.slf4j.Logger;
@@ -25,12 +26,33 @@ import java.util.concurrent.atomic.AtomicInteger;
  */
 public class McpClientManager {
     private static final Logger logger = LoggerFactory.getLogger(McpClientManager.class);
-    private static final ObjectMapper MAPPER = new ObjectMapper();
-    
+    private static final ObjectMapper MAPPER = JacksonUtils.MAPPER;
+
     private final Map<String, Map<String, Object>> serverConfigs = new ConcurrentHashMap<>();
     private final Map<String, McpConnectionStatus> statuses = new ConcurrentHashMap<>();
     private final Map<String, McpSession> sessions = new ConcurrentHashMap<>();
-    private final ExecutorService executor = Executors.newCachedThreadPool();
+    /**
+     * 改造点：
+     * - newCachedThreadPool 无上限，高并发 MCP 场景可能拉爆线程数。这里改为有界线程池 +
+     *   命名 ThreadFactory + 拒绝策略，避免线程爆炸，同时便于 jstack 定位 MCP 相关线程。
+     */
+    private final ExecutorService executor = new ThreadPoolExecutor(
+            2,
+            Math.max(8, Runtime.getRuntime().availableProcessors() * 2),
+            60L, java.util.concurrent.TimeUnit.SECONDS,
+            new java.util.concurrent.LinkedBlockingQueue<>(64),
+            new java.util.concurrent.ThreadFactory() {
+                private final java.util.concurrent.atomic.AtomicInteger counter = new java.util.concurrent.atomic.AtomicInteger();
+                @Override
+                public Thread newThread(Runnable r) {
+                    Thread t = new Thread(r, "jharness-mcp-" + counter.incrementAndGet());
+                    t.setDaemon(true);
+                    t.setUncaughtExceptionHandler((thread, ex) ->
+                            logger.error("MCP 线程未捕获异常: {}", thread.getName(), ex));
+                    return t;
+                }
+            },
+            new java.util.concurrent.ThreadPoolExecutor.CallerRunsPolicy());
     private final AtomicInteger requestIdCounter = new AtomicInteger(0);
     private final OkHttpClient sharedHttpClient;
 

@@ -2,15 +2,18 @@ package io.leavesfly.jharness.session.bridge;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.leavesfly.jharness.util.JacksonUtils;
 
+import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 
 /**
  * 工作密钥编解码工具
  */
 public class WorkSecretHelper {
-    
-    private static final ObjectMapper MAPPER = new ObjectMapper();
+
+    // 统一使用全局 ObjectMapper 单例：避免多份配置分叉，同时继承 NON_NULL / JSR-310 等默认设置
+    private static final ObjectMapper MAPPER = JacksonUtils.MAPPER;
     
     /**
      * 将工作密钥编码为 base64url JSON
@@ -18,8 +21,9 @@ public class WorkSecretHelper {
     public static String encodeWorkSecret(BridgeSessionManager.WorkSecret secret) {
         try {
             String json = MAPPER.writeValueAsString(secret);
+            // 显式 UTF-8：避免在不同平台默认字符集下 base64 出不同的字节序列
             return Base64.getUrlEncoder().withoutPadding()
-                    .encodeToString(json.getBytes());
+                    .encodeToString(json.getBytes(StandardCharsets.UTF_8));
         } catch (JsonProcessingException e) {
             throw new RuntimeException("Failed to encode work secret", e);
         }
@@ -33,7 +37,7 @@ public class WorkSecretHelper {
             // Java 的 Base64.getUrlDecoder() 已自动处理 padding，无需手动添加
             // 手动添加 padding 反而可能导致解码失败（如 secret 长度已是 4 的倍数时会多余）
             byte[] decoded = Base64.getUrlDecoder().decode(secret);
-            String json = new String(decoded);
+            String json = new String(decoded, StandardCharsets.UTF_8);
             
             WorkSecretData data = MAPPER.readValue(json, WorkSecretData.class);
             if (data.version != 1) {

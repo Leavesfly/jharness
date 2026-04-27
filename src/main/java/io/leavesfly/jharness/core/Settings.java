@@ -3,6 +3,9 @@ package io.leavesfly.jharness.core;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.leavesfly.jharness.session.permissions.PermissionMode;
+import io.leavesfly.jharness.util.JacksonUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -35,7 +38,10 @@ public class Settings {
     private List<String> deniedTools = new ArrayList<>();
     private String provider = "anthropic";
 
-    private static final ObjectMapper MAPPER = new ObjectMapper();
+    private static final Logger logger = LoggerFactory.getLogger(Settings.class);
+    // 统一复用 JacksonUtils 的全局单例，避免项目中散落多份 ObjectMapper 造成的性能/行为差异
+    private static final ObjectMapper MAPPER = JacksonUtils.MAPPER;
+    private static final ObjectMapper PRETTY_MAPPER = JacksonUtils.PRETTY_MAPPER;
 
     // 默认配置
     private static final Path DEFAULT_CONFIG_DIR = Paths.get(System.getProperty("user.home"), ".jharness");
@@ -281,7 +287,7 @@ public class Settings {
             String json = Files.readString(configFile);
             com.fasterxml.jackson.databind.JsonNode root = MAPPER.readTree(json);
             if (!root.isObject()) {
-                System.err.println("[WARN] 配置文件根节点不是 JSON 对象，使用默认值: " + configFile);
+                logger.warn("配置文件根节点不是 JSON 对象，使用默认值: {}", configFile);
                 return settings;
             }
 
@@ -300,8 +306,7 @@ public class Settings {
                     settings.permissionMode = PermissionMode.valueOf(
                             root.get("permissionMode").asText().toUpperCase());
                 } catch (IllegalArgumentException iae) {
-                    System.err.println("[WARN] permissionMode 无效，保留默认: "
-                            + root.get("permissionMode").asText());
+                    logger.warn("permissionMode 无效，保留默认: {}", root.get("permissionMode").asText());
                 }
             }
 
@@ -344,8 +349,7 @@ public class Settings {
             }
         } catch (Exception e) {
             // 配置文件解析失败时使用默认值，但记录警告日志便于排查
-            System.err.println("[WARN] 配置文件解析失败，将使用默认值: " + e.getMessage()
-                    + " (配置文件路径: " + configFile + ")");
+            logger.warn("配置文件解析失败，将使用默认值: {} (配置文件路径: {})", e.getMessage(), configFile);
         }
         return settings;
     }
@@ -354,7 +358,7 @@ public class Settings {
         try {
             Files.createDirectories(DEFAULT_CONFIG_DIR);
             Path configFile = DEFAULT_CONFIG_DIR.resolve("settings.json");
-            MAPPER.writerWithDefaultPrettyPrinter().writeValue(configFile.toFile(), this);
+            PRETTY_MAPPER.writeValue(configFile.toFile(), this);
         } catch (Exception e) {
             throw new RuntimeException("保存设置失败", e);
         }
@@ -362,8 +366,9 @@ public class Settings {
 
     public String toJson() {
         try {
-            return MAPPER.writerWithDefaultPrettyPrinter().writeValueAsString(this);
+            return PRETTY_MAPPER.writeValueAsString(this);
         } catch (Exception e) {
+            logger.debug("序列化 Settings 为 JSON 失败", e);
             return "{}";
         }
     }
