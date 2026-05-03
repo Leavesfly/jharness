@@ -31,15 +31,45 @@ public class SessionStorage {
             .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
 
     private final Path sessionsDir;
-    private final Map<String, Object> saveLocks = new ConcurrentHashMap<>();
+    /**
+     * 【B-15】锁表改为 static：所有 SessionStorage 实例共享同一把 per-sessionId 锁，
+     * 避免 SessionCommandHandler 与自动保存钩子各自 new SessionStorage(同目录) 时
+     * 出现并发写覆盖的问题。key 使用 "绝对路径#sessionId" 保证跨目录会话 id 重名也安全。
+     */
+    private static final Map<String, Object> SAVE_LOCKS = new ConcurrentHashMap<>();
 
     public SessionStorage(Path sessionsDir) {
         this.sessionsDir = sessionsDir;
         try {
             Files.createDirectories(sessionsDir);
+            // 【B-9】启动时清理历史 .tmp 残留（来自上次 JVM 崩溃的原子写中断），
+            // 防止 listSessions 过度遍历或磁盘占用持续增长。失败仅记 warn。
+            cleanOrphanTempFiles();
         } catch (IOException e) {
             logger.error("创建会话目录失败", e);
         }
+    }
+
+    /** 【B-9】清理 session-*.tmp 残留文件。安静失败，不影响主流程。 */
+    private void cleanOrphanTempFiles() {
+        try (Stream<Path> files = Files.list(sessionsDir)) {
+            files.filter(p -> p.getFileName().toString().endsWith(".tmp"))
+                 .forEach(p -> {
+                     try {
+                         Files.deleteIfExists(p);
+                         logger.debug("清理 .tmp 残留: {}", p);
+                     } catch (IOException e) {
+                         logger.warn("清理 .tmp 残留失败: {}", p, e);
+                     }
+                 });
+        } catch (IOException e) {
+            logger.warn("列出会话目录失败，跳过 .tmp 清理: {}", sessionsDir, e);
+        }
+    }
+
+    /** 【B-15】构造跨实例共享的锁 key。 */
+    private String lockKey(String sessionId) {
+        return sessionsDir.toAbsolutePath().normalize().toString() + "#" + sessionId;
     }
 
     /**
@@ -50,7 +80,9 @@ public class SessionStorage {
      */
     public void saveSession(SessionSnapshot snapshot) {
         String sessionId = snapshot.getSessionId();
-        Object lock = saveLocks.computeIfAbsent(sessionId, k -> new Object());
+        // 【B-15】使用跨实例共享的静态锁表，避免多个 SessionStorage 实例对同一会话并发写覆盖
+        String key = lockKey(sessionId);
+        Object lock = SAVE_LOCKS.computeIfAbsent(key, k -> new Object());
         synchronized (lock) {
             try {
                 Path file = sessionsDir.resolve("session-" + sessionId + ".json");
@@ -62,8 +94,8 @@ public class SessionStorage {
             } catch (IOException e) {
                 logger.error("保存会话失败", e);
             } finally {
-                // 写入完成后移除锁对象，防止 saveLocks 无限增长
-                saveLocks.remove(sessionId, lock);
+                // 写入完成后移除锁对象，防止锁表无限增长
+                SAVE_LOCKS.remove(key, lock);
             }
         }
     }

@@ -1,0 +1,7 @@
+{
+  "_comment": "默认 Hook 集合。示例为空数组，用户可按需启用 PRE_TOOL_USE / POST_TOOL_USE 等 Hook。",
+  "PRE_TOOL_USE": [],
+  "POST_TOOL_USE": [],
+  "SESSION_START": [],
+  "SESSION_END": []
+}

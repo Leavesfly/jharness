@@ -41,9 +41,18 @@ public class QueryEngine implements AutoCloseable {
     private final List<ConversationMessage> messages = new ArrayList<>();
     private final Object messageLock = new Object();
     private final CostTracker costTracker = new CostTracker();
-    private final MessageCompactionService compactionService = new MessageCompactionService();
+    /**
+     * 【改造】压缩服务改为可注入（不再 final 到无参默认实现），允许外部根据 Settings
+     * 注入自定义 token/条数预算，并通过 {@link MessageCompactionService#withSystemPromptTokens(int)}
+     * 把 systemPrompt 的 token 占用提前扣减，避免超长 CLAUDE.md 把压缩触发时机拖到超出 API 上下文。
+     */
+    private volatile MessageCompactionService compactionService = new MessageCompactionService();
     private final LlmProvider apiClient;
-    private final ToolRegistry toolRegistry;
+    /**
+     * 【改造】原来是 final，现改为可替换（带 setter），便于 UI/上层在 MCP 动态工具
+     * 刷新后无需重建 engine。多线程场景下通过 volatile 保证可见性。
+     */
+    private volatile ToolRegistry toolRegistry;
     private final PermissionChecker permissionChecker;
     private volatile Path cwd;
     private final String systemPrompt;
@@ -51,6 +60,12 @@ public class QueryEngine implements AutoCloseable {
     /** F-P0-3 流式中断标志：submitMessage 开始时置 false，cancel() 置 true，循环每轮检查。 */
     private final java.util.concurrent.atomic.AtomicBoolean cancelled =
             new java.util.concurrent.atomic.AtomicBoolean(false);
+    /**
+     * 【新增】会话持久化钩子。每当一轮交互结束（含压缩、超时、取消）后调用，
+     * 由上层决定如何把当前 messages 快照写入 SessionStorage。null 表示关闭自动保存。
+     */
+    private volatile java.util.function.Consumer<java.util.List<ConversationMessage>>
+            sessionPersister;
 
     /**
      * 构造函数（兼容旧签名）。
@@ -95,6 +110,78 @@ public class QueryEngine implements AutoCloseable {
     /** 查询是否处于被取消状态（供 UI/测试使用）。 */
     public boolean isCancelled() {
         return cancelled.get();
+    }
+
+    /**
+     * 【新增】注入自定义压缩服务，上层可通过它把 systemPrompt 的 token 占用扣减到预算里，
+     * 或换成基于 token 的更激进压缩策略。
+     */
+    public void setCompactionService(MessageCompactionService service) {
+        if (service != null) {
+            this.compactionService = service;
+        }
+    }
+
+    /**
+     * 【新增】替换 ToolRegistry。用于 MCP 异步连接完成后把动态工具刷新到 engine。
+     * 注：通常直接在原 ToolRegistry 上 refreshMcpTools 就够了，此 setter 仅用于极端场景。
+     */
+    public void setToolRegistry(ToolRegistry registry) {
+        if (registry != null) {
+            this.toolRegistry = registry;
+        }
+    }
+
+    /**
+     * 【新增】获取 ToolRegistry，供交互 UI / 命令注册表使用。
+     */
+    public ToolRegistry getToolRegistry() {
+        return this.toolRegistry;
+    }
+
+    /**
+     * 【P0-wire-up】已加载的插件列表（只用于在构造 CommandRegistry / teamRegistry 时
+     * 传递 plugin 的 commands & agents，不影响 engine 本身行为）。
+     *
+     * 用 Object 持有避免 QueryEngine 直接依赖 extension 包，降低耦合。
+     */
+    private volatile java.util.List<Object> loadedPlugins = java.util.Collections.emptyList();
+
+    public void setLoadedPlugins(java.util.List<?> plugins) {
+        this.loadedPlugins = plugins == null
+                ? java.util.Collections.emptyList()
+                : java.util.List.copyOf(plugins);
+    }
+
+    public java.util.List<Object> getLoadedPlugins() {
+        return this.loadedPlugins;
+    }
+
+    /**
+     * 【新增】设置会话持久化钩子，null 表示关闭自动保存。
+     * QueryEngine 会在每轮消息变更后（包括压缩、工具结果、超时、取消）回调一次。
+     */
+    public void setSessionPersister(
+            java.util.function.Consumer<java.util.List<ConversationMessage>> persister) {
+        this.sessionPersister = persister;
+    }
+
+    /**
+     * 【新增】向 sessionPersister 推送当前消息快照，异常被吞掉并记录日志，
+     * 保证持久化失败不会影响主循环。
+     */
+    private void persistIfNeeded() {
+        java.util.function.Consumer<java.util.List<ConversationMessage>> p = this.sessionPersister;
+        if (p == null) return;
+        List<ConversationMessage> snapshot;
+        synchronized (messageLock) {
+            snapshot = new ArrayList<>(messages);
+        }
+        try {
+            p.accept(snapshot);
+        } catch (Exception e) {
+            logger.warn("会话持久化失败（忽略）: {}", e.getMessage());
+        }
     }
 
     /**
@@ -193,7 +280,28 @@ public class QueryEngine implements AutoCloseable {
     }
 
     /**
-     * 关闭 QueryEngine，释放底层 API 客户端资源（HTTP 连接池、线程池等）
+     * 【新增】engine 关闭时要调用的额外清理钩子。用于把 MCP / Cron / BackgroundTask 等后台资源
+     * 的生命周期绑定到 engine，避免单测或脚本调用时线程泄漏。
+     *
+     * <p>设计说明：使用 CopyOnWriteArrayList 保证注册/遍历的线程安全；
+     * 钩子逆序执行（后注册先释放），符合 LIFO 的资源关闭习惯。
+     */
+    private final java.util.List<Runnable> closeHooks =
+            new java.util.concurrent.CopyOnWriteArrayList<>();
+
+    /**
+     * 【新增】注册一个在 {@link #close()} 时执行的清理钩子。
+     * 钩子内部应自行处理异常；主流程会在异常时记录日志但不中断后续钩子。
+     */
+    public void registerCloseHook(Runnable hook) {
+        if (hook != null) {
+            closeHooks.add(hook);
+        }
+    }
+
+    /**
+     * 关闭 QueryEngine，释放底层 API 客户端资源（HTTP 连接池、线程池等），
+     * 并按 LIFO 顺序执行所有已注册的 close hook（【新增】）。
      */
     @Override
     public void close() {
@@ -202,6 +310,15 @@ public class QueryEngine implements AutoCloseable {
         } catch (Exception e) {
             logger.warn("关闭 ApiClient 失败", e);
         }
+        // 【新增】逆序执行注册的 close hook，每个钩子独立 try/catch
+        for (int i = closeHooks.size() - 1; i >= 0; i--) {
+            try {
+                closeHooks.get(i).run();
+            } catch (Exception e) {
+                logger.warn("close hook 执行失败（忽略）: {}", e.getMessage());
+            }
+        }
+        closeHooks.clear();
     }
 
     /**

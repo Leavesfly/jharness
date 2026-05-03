@@ -38,9 +38,22 @@ public class MessageCompactionService {
     }
 
     public MessageCompactionService(int maxMessages, int summaryMessages, int maxTokenBudget) {
-        this.maxMessages = maxMessages;
-        this.summaryMessages = summaryMessages;
-        this.maxTokenBudget = maxTokenBudget;
+        // 【新增】对非法配置做防御，避免上游传 0 / 负值后触发死循环
+        this.maxMessages = maxMessages > 0 ? maxMessages : DEFAULT_MAX_MESSAGES;
+        this.summaryMessages = summaryMessages > 0 ? summaryMessages : DEFAULT_SUMMARY_MESSAGES;
+        this.maxTokenBudget = maxTokenBudget > 0 ? maxTokenBudget : DEFAULT_MAX_TOKEN_BUDGET;
+    }
+
+    /**
+     * 【新增】允许外部预先把 systemPrompt 的 token 从总预算里扣减，避免超长 CLAUDE.md 注入
+     * system prompt 导致压缩触发过晚。
+     *
+     * @param systemPromptTokens systemPrompt 估算出的 token 数
+     * @return 新的压缩服务实例
+     */
+    public MessageCompactionService withSystemPromptTokens(int systemPromptTokens) {
+        int adjusted = Math.max(2_000, this.maxTokenBudget - Math.max(0, systemPromptTokens));
+        return new MessageCompactionService(this.maxMessages, this.summaryMessages, adjusted);
     }
 
     /**

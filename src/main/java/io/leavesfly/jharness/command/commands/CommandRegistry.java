@@ -51,31 +51,24 @@ public class CommandRegistry {
         AgentCommandHandler agentHandler = new AgentCommandHandler(teamRegistry, orchestrator);
         registry.register(agentHandler.createAgentsCommand());
 
-        // 注册会话命令
-        Path sessionsDir = Paths.get(System.getProperty("user.home"), ".openharness", "sessions");
-        SessionStorage sessionStorage = new SessionStorage(sessionsDir);
-
-        registry.register(SessionCommandHandler.createResumeCommand(sessionStorage));
-        registry.register(SessionCommandHandler.createExportCommand());
-        registry.register(SessionCommandHandler.createShareCommand(sessionStorage));
-        registry.register(SessionCommandHandler.createSessionCommand(sessionStorage));
-        registry.register(SessionCommandHandler.createTagCommand(sessionStorage));
-        registry.register(SessionCommandHandler.createRewindCommand());
-        registry.register(SessionCommandHandler.createCopyCommand());
-        registry.register(SessionCommandHandler.createCompactCommand());
-        registry.register(SessionCommandHandler.createContextCommand());
-        registry.register(SessionCommandHandler.createSummaryCommand());
-
+        // 【B-12】会话类命令在基础构造 registerAllCommands() 中已经注册过一次，
+        // 这里如果再注册一次 createSessionCommand/createShareCommand 等，会用新的 SessionStorage
+        // 实例覆盖掉旧的（`register()` 是 put 语义）。虽然功能上等价，但容易在单测中掩盖问题。
+        // 改为：只在基础版未注册过的命令才补注册，保证幂等且不会"静默覆盖"。
+        // 注意：基础版使用的 SessionStorage 指向同一个 ~/.jharness/sessions，语义一致。
 
         // 注册 Cron 命令
         if (cronRegistry != null) {
-            registry.register(CronCommandHandler.createCronCommand(cronRegistry));
+            if (!registry.hasCommand("cron")) {
+                registry.register(CronCommandHandler.createCronCommand(cronRegistry));
+            }
         }
 
-        // 注册增强版 Hooks 命令
+        // 注册增强版 Hooks 命令（覆盖基础版的简易 /hooks，因为 Registry 版本提供持久化/触发等增强能力）
         if (hookRegistry != null) {
             registry.register(SystemCommandHandler.createHooksCommandWithRegistry(hookRegistry));
-        }        logger.info("完整命令注册完成，共 {} 个命令", registry.size());
+        }
+        logger.info("完整命令注册完成，共 {} 个命令", registry.size());
         return registry;
     }
 
@@ -136,7 +129,8 @@ public class CommandRegistry {
         register(GitCommandHandler.createFilesCommand());
         
         // 会话命令
-        Path sessionsDir = Paths.get(System.getProperty("user.home"), ".openharness", "sessions");
+        // P-02 修复：从 ~/.openharness/sessions 改为 ~/.jharness/sessions，与项目数据目录一致
+        Path sessionsDir = Settings.getDefaultDataDir().resolve("sessions");
         SessionStorage sessionStorage = new SessionStorage(sessionsDir);
 
         register(SessionCommandHandler.createResumeCommand(sessionStorage));
@@ -151,7 +145,8 @@ public class CommandRegistry {
         register(SessionCommandHandler.createSummaryCommand());
         
         // 工具和系统命令
-        Path memoryDir = Paths.get(System.getProperty("user.home"), ".openharness", "memory");
+        // P-02 修复：从 ~/.openharness/memory 改为 ~/.jharness/memories，与项目数据目录一致
+        Path memoryDir = Settings.getDefaultDataDir().resolve("memories");
         MemoryManager memoryManager = new MemoryManager(memoryDir);
 
         register(SystemCommandHandler.createMemoryCommand(memoryManager));
@@ -193,6 +188,16 @@ public class CommandRegistry {
     }
 
     public void register(SlashCommand command) { commands.put(command.getName().toLowerCase(), command); }
+
+    /**
+     * 【B-12】判断指定名字的命令是否已被注册，用于 createFullRegistry 防重复注册。
+     */
+    public boolean hasCommand(String name) {
+        if (name == null) return false;
+        String n = name.startsWith("/") ? name.substring(1) : name;
+        return commands.containsKey(n.toLowerCase());
+    }
+
     public Optional<SlashCommand> lookup(String input) {
         String name = input.startsWith("/") ? input.substring(1) : input;
         int i = name.indexOf(" ");

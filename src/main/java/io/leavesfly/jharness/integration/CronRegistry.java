@@ -21,14 +21,17 @@ import java.util.stream.Collectors;
 
 /**
  * Cron 作业注册表服务
- * 
+ *
  * 管理定时作业的定义和持久化。
  * 作业存储在 ~/.jharness/data/cron_jobs.json 文件中。
- * 
+ *
  * 支持基于 ScheduledExecutorService 的定时调度执行。
  * 作业也可通过 RemoteTriggerTool 按需触发执行。
+ *
+ * P-10：实现 {@link AutoCloseable}，允许调用方用 try-with-resources 管理生命周期；
+ * {@link #shutdown()} 幂等（通过 {@code closed} volatile 标志），重复调用无副作用。
  */
-public class CronRegistry {
+public class CronRegistry implements AutoCloseable {
     private static final Logger logger = LoggerFactory.getLogger(CronRegistry.class);
     private static final ObjectMapper MAPPER = new ObjectMapper()
             .registerModule(new JavaTimeModule());
@@ -51,6 +54,8 @@ public class CronRegistry {
     // 修复并发 bug：旧实现用 HashMap 却在 synchronized(jobsLock) 之外访问，存在数据竞争
     private final Map<String, ScheduledFuture<?>> scheduledTasks = new ConcurrentHashMap<>();
     private final Object jobsLock = new Object();
+    /** P-10：幂等关闭标志。多次 shutdown()/close() 只执行一次真正的清理。 */
+    private volatile boolean closed = false;
     private CronJobExecutor jobExecutor;
 
     /**
@@ -170,14 +175,41 @@ public class CronRegistry {
     }
 
     /**
-     * 关闭调度器
+     * 关闭调度器（P-10：幂等 + 有界等待，避免 daemon 线程在极端场景下一直阻塞 JVM 关闭）。
      */
-    public void shutdown() {
+    public synchronized void shutdown() {
+        if (closed) {
+            return;
+        }
+        closed = true;
         for (ScheduledFuture<?> future : scheduledTasks.values()) {
-            future.cancel(false);
+            try {
+                future.cancel(false);
+            } catch (Exception e) {
+                logger.debug("取消 cron 任务失败（忽略）", e);
+            }
         }
         scheduledTasks.clear();
         scheduler.shutdown();
+        try {
+            if (!scheduler.awaitTermination(3, TimeUnit.SECONDS)) {
+                scheduler.shutdownNow();
+                if (!scheduler.awaitTermination(2, TimeUnit.SECONDS)) {
+                    logger.warn("cron 调度器强制关闭后仍未结束");
+                }
+            }
+        } catch (InterruptedException ie) {
+            scheduler.shutdownNow();
+            Thread.currentThread().interrupt();
+        }
+    }
+
+    /**
+     * P-10：AutoCloseable 实现，委托给 {@link #shutdown()}。
+     */
+    @Override
+    public void close() {
+        shutdown();
     }
 
     /**

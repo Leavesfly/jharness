@@ -212,4 +212,43 @@ public class ToolRegistry {
     public int size() {
         return tools.size();
     }
+
+    /**
+     * 【新增】刷新 MCP 动态工具：把 {@link McpClientManager#listTools()} 里当前已连上的工具
+     * 以 {@link McpToolAdapter} 形式补注册到本 registry。已存在的工具名会被 register() 静默跳过
+     * （putIfAbsent 语义），因此本方法可多次调用，幂等。
+     *
+     * <p>背景：{@link #withDefaults} 调用时 MCP 连接通常还未完成（connectAll 是异步），
+     * 此时 listTools 返回空列表，动态工具会漏注册。
+     * JHarnessApplication 在 MCP 连接完成后会调用本方法补齐。
+     *
+     * @param mcpManager MCP 客户端管理器，为 null 时直接返回 0
+     * @return 本次新注册的 MCP 工具数量
+     */
+    public int refreshMcpTools(McpClientManager mcpManager) {
+        if (mcpManager == null) {
+            return 0;
+        }
+        int added = 0;
+        try {
+            for (var toolInfo : mcpManager.listTools()) {
+                String name = toolInfo.getName();
+                if (name == null || name.isBlank()) {
+                    continue;
+                }
+                if (tools.containsKey(name)) {
+                    continue;
+                }
+                McpToolAdapter adapter = new McpToolAdapter(mcpManager, toolInfo);
+                BaseTool<?> existing = tools.putIfAbsent(name, adapter);
+                if (existing == null) {
+                    added++;
+                    logger.debug("补注册 MCP 动态工具: {}", name);
+                }
+            }
+        } catch (Exception e) {
+            logger.warn("刷新 MCP 动态工具失败", e);
+        }
+        return added;
+    }
 }

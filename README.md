@@ -60,7 +60,7 @@ JHarness 支持**交互式终端界面（TUI）**和**单次查询模式**，适
 
 - **Java 17** 或更高版本
 - **Maven 3.x**
-- Anthropic API Key（或兼容端点）
+- OpenAI 兼容 API Key（任意兼容 OpenAI Chat Completions 协议的端点，如 OpenAI、DeepSeek、Qwen、Kimi 等）
 
 ### 构建项目
 
@@ -78,10 +78,13 @@ mvn clean package -DskipTests
 ### 配置 API Key
 
 ```bash
-# 通过环境变量配置
-export ANTHROPIC_API_KEY="your-api-key"
+# 通过环境变量配置（优先 OPENAI_API_KEY，兼容 ANTHROPIC_API_KEY）
+export OPENAI_API_KEY="your-api-key"
+# 可选：自定义端点，默认指向官方 https://api.openai.com/v1
+export OPENAI_BASE_URL="https://api.deepseek.com/v1"
+export OPENAI_MODEL="deepseek-chat"
 
-# 或通过配置文件（~/.jharness/settings.json）
+# 或通过配置文件（~/.jharness/settings.json）配置 apiKey / baseUrl / model
 ```
 
 ### 运行
@@ -150,7 +153,7 @@ java -jar target/jharness-0.1.0-SNAPSHOT.jar -r <session-id>
 │  └─────────┼────────────────┼────────────────────────────┘  │
 │            │                │                                │
 │  ┌─────────▼──────┐  ┌─────▼────────────────────────────┐   │
-│  │ AnthropicAPI   │  │         ToolRegistry              │   │
+│  │  OpenAiApi     │  │         ToolRegistry              │   │
 │  │ Client (SSE)   │  │  ┌────┐┌────┐┌────┐┌────┐┌────┐  │   │
 │  │ + RetryPolicy  │  │  │Bash││File││Grep││Web ││LSP │  │   │
 │  └────────────────┘  │  │Tool││Read││Tool││Srch││Tool│  │   │
@@ -198,50 +201,48 @@ java -jar target/jharness-0.1.0-SNAPSHOT.jar -r <session-id>
 ```
 src/main/java/io/leavesfly/jharness/
 ├── JHarnessApplication.java    # 应用主入口 (Picocli CLI)
-├── api/                        # LLM API 客户端
-│   ├── AnthropicApiClient.java # Anthropic API 实现 (SSE 流式)
-│   ├── retry/                  # 指数退避重试策略
-│   └── errors/                 # API 异常体系
-├── engine/                     # 核心查询引擎
-│   ├── QueryEngine.java        # ReAct 查询循环
-│   ├── CostTracker.java        # Token 成本追踪
-│   ├── MessageCompactionService.java  # 消息压缩
-│   ├── model/                  # 数据模型 (消息、内容块)
-│   └── stream/                 # 流式事件 (文本增量、工具执行)
+├── core/                       # 核心层
+│   ├── Settings.java           # 配置加载与默认目录（~/.jharness）
+│   ├── MemoryManager.java      # 跨会话记忆管理
+│   └── engine/                 # 查询引擎
+│       ├── QueryEngine.java    # ReAct 查询循环 + 消息压缩 + 成本追踪
+│       ├── CostTracker.java    # Token 成本追踪
+│       ├── model/              # 消息 / 内容块数据模型
+│       └── stream/             # 流式事件（文本增量、工具执行）
+├── integration/                # 外部集成层
+│   ├── api/                    # LLM API 客户端
+│   │   ├── OpenAiApiClient.java # OpenAI 兼容协议客户端 (SSE 流式)
+│   │   ├── retry/              # 指数退避重试策略
+│   │   └── errors/             # API 异常体系
+│   ├── mcp/                    # MCP 协议客户端 (stdio / HTTP)
+│   └── CronRegistry.java       # Cron 定时任务调度
 ├── tools/                      # 工具系统 (40+ 内置工具)
 │   ├── BaseTool.java           # 工具抽象基类
 │   ├── ToolRegistry.java       # 工具注册表
 │   └── input/                  # 工具输入模型
-├── commands/                   # 斜杠命令系统
-│   ├── CommandRegistry.java    # 命令注册表 (50+ 命令)
-│   └── handlers/               # 命令处理器
-├── plugins/                    # 插件系统
-├── skills/                     # 技能系统
-├── hooks/                      # Hook 生命周期系统
-├── mcp/                        # MCP 协议客户端
-├── coordinator/                # 多智能体协调
-├── permissions/                # 权限系统
-├── sessions/                   # 会话持久化
-├── memory/                     # 跨会话记忆管理
-├── tasks/                      # 后台任务管理
-├── services/                   # Cron 定时任务
-├── config/                     # 配置管理
-├── state/                      # 应用状态管理
-├── prompts/                    # 系统提示词构建
-├── bridge/                     # 桥接会话管理
-├── tui/                        # 终端 UI (Lanterna)
-├── ui/                         # UI 组件系统
-├── keybindings/                # 快捷键绑定
-├── outputstyles/               # 输出样式
-└── util/                       # 工具类
+├── command/                    # 斜杠命令系统
+│   └── commands/               # 命令注册表 + 50+ 命令处理器
+├── extension/                  # 扩展系统
+│   ├── plugins/                # 插件加载与清单
+│   └── skills/                 # Markdown + YAML 技能
+├── agent/                      # Agent 能力
+│   ├── hooks/                  # Hook 生命周期系统
+│   ├── coordinator/            # 多智能体协调 / Team
+│   └── tasks/                  # 后台 Shell / Agent 任务
+├── session/                    # 会话与安全
+│   ├── sessions/               # 会话快照持久化
+│   └── permissions/            # 权限系统（模式 + 黑白名单 + 路径规则）
+├── prompts/                    # 系统提示词构建（含 CLAUDE.md 注入）
+├── ui/tui/                     # 终端交互 UI（Console / Lanterna）
+└── util/                       # 工具类（Jackson / URL 安全 / 日志等）
 ```
 
 ### 核心模块说明
 
 | 模块 | 说明 |
 |------|------|
-| **engine** | 核心查询引擎，实现 ReAct 循环（LLM 调用 → 工具执行 → 结果反馈），支持多工具并行执行 |
-| **api** | Anthropic API 客户端，基于 OkHttp + SSE 实现流式响应，内置指数退避重试策略 |
+| **core.engine** | 核心查询引擎，实现 ReAct 循环（LLM 调用 → 工具执行 → 结果反馈），支持多工具并行执行、消息压缩与取消 |
+| **integration.api** | OpenAI 兼容协议 API 客户端（OpenAI / DeepSeek / Qwen / Kimi 等），基于 OkHttp + SSE 实现流式响应，内置指数退避重试策略 |
 | **tools** | 工具系统，提供 40+ 内置工具，支持异步执行和自动 JSON Schema 生成 |
 | **commands** | 斜杠命令系统，提供 50+ 交互式命令（`/help`, `/config`, `/git` 等） |
 | **plugins** | 插件系统，支持从 `~/.jharness/plugins/` 和项目目录加载插件 |
@@ -592,8 +593,11 @@ JHarness 提供多层权限控制机制，确保 Agent 操作的安全性。
 
 | 环境变量 | 说明 |
 |----------|------|
-| `ANTHROPIC_API_KEY` | Anthropic API 密钥 |
-| `JHARNESS_MODEL` | 默认使用的模型 |
+| `OPENAI_API_KEY` | OpenAI 兼容端点的 API 密钥（优先） |
+| `ANTHROPIC_API_KEY` | 兼容别名，当 `OPENAI_API_KEY` 未设置时使用 |
+| `OPENAI_BASE_URL` | OpenAI 兼容端点（默认 `https://api.openai.com/v1`） |
+| `OPENAI_MODEL` / `JHARNESS_MODEL` | 默认使用的模型名 |
+| `JHARNESS_HOOK_DEPTH` | Hook 递归深度（框架内部维护，一般无需手动设置） |
 
 ### 配置项
 
@@ -661,10 +665,7 @@ public class MyTool extends BaseTool<MyToolInput> {
 
 ### 注册工具
 
-```java
-ToolRegistry registry = ToolRegistry.withDefaults();
-registry.register(new MyTool());
-```
+通过 `ToolRegistry.withDefaults(...)` 获取内置工具集合，再调用 `register` 方法添加自定义工具，即可在下一次 `QueryEngine` 启动时生效（MCP 动态工具也会走同一流程）。
 
 ### 项目上下文文件
 

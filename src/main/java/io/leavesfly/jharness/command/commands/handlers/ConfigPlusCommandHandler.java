@@ -6,12 +6,17 @@ import io.leavesfly.jharness.command.commands.SimpleSlashCommand;
 import io.leavesfly.jharness.core.Settings;
 
 import io.leavesfly.jharness.extension.plugins.PluginInstaller;
+import io.leavesfly.jharness.extension.plugins.PluginPaths;
+import io.leavesfly.jharness.extension.plugins.marketplace.MarketplaceDefinition;
+import io.leavesfly.jharness.extension.plugins.marketplace.MarketplaceRegistry;
+import io.leavesfly.jharness.extension.plugins.trust.TrustStore;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 
 /**
@@ -137,7 +142,20 @@ public class ConfigPlusCommandHandler {
     }
 
     /**
-     * /plugin - 管理插件
+     * /plugin - 管理插件（含 marketplace 子命令）。
+     *
+     * <p>用法：
+     * <ul>
+     *   <li>{@code /plugin list|ls} — 列出所有已安装插件（合并用户目录和 Claude 兼容目录）</li>
+     *   <li>{@code /plugin path} — 打印插件目录</li>
+     *   <li>{@code /plugin install <dir>} — 从本地目录安装</li>
+     *   <li>{@code /plugin remove <name>} — 卸载插件</li>
+     *   <li>{@code /plugin marketplace add <dir> [name]} — 注册本地 marketplace</li>
+     *   <li>{@code /plugin marketplace remove <name>} — 注销 marketplace</li>
+     *   <li>{@code /plugin marketplace list} — 列出已注册 marketplace</li>
+     *   <li>{@code /plugin marketplace plugins <name>} — 列出 marketplace 内插件</li>
+     *   <li>{@code /plugin install <pluginName>@<marketplace>} — 从 marketplace 安装</li>
+     * </ul>
      */
     public static SlashCommand createPluginCommand() {
         return cmd("plugin", "管理插件", (args, ctx, ec) -> {
@@ -145,57 +163,212 @@ public class ConfigPlusCommandHandler {
             String[] parts = joined.isEmpty() ? new String[0] : joined.split("\\s+");
             String subcmd = parts.length > 0 ? parts[0] : "list";
 
-            Path pluginsDir = Path.of(System.getProperty("user.home"), ".openharness/plugins");
+            // 【修复】原来硬编码 ~/.openharness/plugins 与实际加载路径 ~/.jharness/plugins 不一致，
+            // 改为统一使用 PluginPaths.getUserPluginsDir()。
+            Path pluginsDir = PluginPaths.getUserPluginsDir();
 
             return switch (subcmd) {
                 case "list", "ls" -> {
-                    if (!Files.exists(pluginsDir)) {
-                        yield CompletableFuture.completedFuture(CommandResult.success("没有已安装的插件"));
-                    }
                     StringBuilder sb = new StringBuilder("已安装的插件:\n");
-                    try (var stream = Files.list(pluginsDir)) {
-                        stream.filter(Files::isDirectory).forEach(d ->
-                                sb.append("  - ").append(d.getFileName()).append("\n"));
-                    } catch (Exception e) {
-                        sb.append("  读取失败: ").append(e.getMessage());
+                    int total = 0;
+                    for (Path root : PluginPaths.listUserPluginRoots()) {
+                        try (var stream = Files.list(root)) {
+                            var dirs = stream.filter(Files::isDirectory).sorted().toList();
+                            if (!dirs.isEmpty()) {
+                                sb.append("[").append(root).append("]\n");
+                                for (Path d : dirs) {
+                                    sb.append("  - ").append(d.getFileName()).append("\n");
+                                    total++;
+                                }
+                            }
+                        } catch (Exception e) {
+                            sb.append("  读取 ").append(root).append(" 失败: ").append(e.getMessage()).append("\n");
+                        }
+                    }
+                    if (total == 0) {
+                        yield CompletableFuture.completedFuture(CommandResult.success("没有已安装的插件"));
                     }
                     yield CompletableFuture.completedFuture(CommandResult.success(sb.toString().trim()));
                 }
                 case "path" ->
                         CompletableFuture.completedFuture(CommandResult.success("插件目录: " + pluginsDir));
-                case "install" -> {
-                    if (parts.length < 2) {
-                        yield CompletableFuture.completedFuture(CommandResult.error("用法: /plugin install <路径>"));
-                    }
-                    try {
-                        Path sourceDir = Path.of(parts[1]);
-                        boolean success = PluginInstaller.installPlugin(sourceDir);
-                        yield CompletableFuture.completedFuture(
-                                success ? CommandResult.success("插件安装成功: " + parts[1])
-                                        : CommandResult.error("插件安装失败"));
-                    } catch (Exception e) {
-                        yield CompletableFuture.completedFuture(
-                                CommandResult.error("插件安装失败: " + e.getMessage()));
-                    }
-                }
-                case "remove" -> {
-                    if (parts.length < 2) {
-                        yield CompletableFuture.completedFuture(CommandResult.error("用法: /plugin remove <名称>"));
-                    }
-                    try {
-                        boolean success = PluginInstaller.uninstallPlugin(parts[1]);
-                        yield CompletableFuture.completedFuture(
-                                success ? CommandResult.success("插件已卸载: " + parts[1])
-                                        : CommandResult.error("插件不存在: " + parts[1]));
-                    } catch (Exception e) {
-                        yield CompletableFuture.completedFuture(
-                                CommandResult.error("插件卸载失败: " + e.getMessage()));
-                    }
-                }
+                case "install" -> handleInstall(parts);
+                case "remove" -> handleRemove(parts);
+                case "marketplace", "mp" -> handleMarketplace(parts);
+                case "trust" -> handleTrust(parts);
                 default ->
-                        CompletableFuture.completedFuture(CommandResult.success("用法: /plugin [list|path|install|remove]"));
+                        CompletableFuture.completedFuture(CommandResult.success(
+                                "用法: /plugin [list|path|install|remove|marketplace|trust ...]"));
             };
         });
+    }
+
+    /**
+     * 【P3】/plugin trust 子命令：管理 author 信任列表。
+     * <ul>
+     *   <li>{@code /plugin trust list} — 列出已信任的 author</li>
+     *   <li>{@code /plugin trust add <author>} — 添加信任</li>
+     *   <li>{@code /plugin trust remove <author>} — 撤销信任</li>
+     * </ul>
+     */
+    private static CompletableFuture<CommandResult> handleTrust(String[] parts) {
+        TrustStore store = new TrustStore();
+        String action = parts.length >= 2 ? parts[1] : "list";
+        switch (action) {
+            case "add":
+                if (parts.length < 3) {
+                    return CompletableFuture.completedFuture(
+                            CommandResult.error("用法: /plugin trust add <author>"));
+                }
+                boolean added = store.trust(parts[2]);
+                return CompletableFuture.completedFuture(
+                        CommandResult.success(added
+                                ? "已信任 author: " + parts[2]
+                                : "author 已在信任列表中: " + parts[2]));
+            case "remove":
+            case "rm":
+                if (parts.length < 3) {
+                    return CompletableFuture.completedFuture(
+                            CommandResult.error("用法: /plugin trust remove <author>"));
+                }
+                boolean removed = store.revoke(parts[2]);
+                return CompletableFuture.completedFuture(removed
+                        ? CommandResult.success("已撤销信任: " + parts[2])
+                        : CommandResult.error("author 不在信任列表: " + parts[2]));
+            case "list":
+            case "ls":
+            default:
+                var trusted = store.list();
+                if (trusted.isEmpty()) {
+                    return CompletableFuture.completedFuture(
+                            CommandResult.success("信任列表为空"));
+                }
+                StringBuilder sb = new StringBuilder("已信任的 author:\n");
+                for (String a : trusted) sb.append("  - ").append(a).append('\n');
+                return CompletableFuture.completedFuture(
+                        CommandResult.success(sb.toString().trim()));
+        }
+    }
+
+    /**
+     * /plugin install 的子逻辑，支持本地目录与 marketplace 引用两种源。
+     */
+    private static CompletableFuture<CommandResult> handleInstall(String[] parts) {
+        if (parts.length < 2) {
+            return CompletableFuture.completedFuture(CommandResult.error(
+                    "用法: /plugin install <目录> 或 /plugin install <pluginName>@<marketplace>"));
+        }
+        String ref = parts[1];
+        try {
+            if (ref.contains("@")) {
+                // marketplace 引用：name@marketplace
+                int at = ref.lastIndexOf('@');
+                String pluginName = ref.substring(0, at);
+                String marketplaceName = ref.substring(at + 1);
+                if (pluginName.isBlank() || marketplaceName.isBlank()) {
+                    return CompletableFuture.completedFuture(
+                            CommandResult.error("非法的 marketplace 引用: " + ref));
+                }
+                MarketplaceRegistry registry = new MarketplaceRegistry();
+                Path source = registry.resolvePluginSource(marketplaceName, pluginName);
+                boolean success = PluginInstaller.installPlugin(source);
+                return CompletableFuture.completedFuture(
+                        success ? CommandResult.success(
+                                "插件安装成功: " + pluginName + " (来自 marketplace " + marketplaceName + ")")
+                                : CommandResult.error("插件安装失败"));
+            }
+            Path sourceDir = Path.of(ref);
+            boolean success = PluginInstaller.installPlugin(sourceDir);
+            return CompletableFuture.completedFuture(
+                    success ? CommandResult.success("插件安装成功: " + ref)
+                            : CommandResult.error("插件安装失败"));
+        } catch (Exception e) {
+            return CompletableFuture.completedFuture(
+                    CommandResult.error("插件安装失败: " + e.getMessage()));
+        }
+    }
+
+    private static CompletableFuture<CommandResult> handleRemove(String[] parts) {
+        if (parts.length < 2) {
+            return CompletableFuture.completedFuture(CommandResult.error("用法: /plugin remove <名称>"));
+        }
+        try {
+            boolean success = PluginInstaller.uninstallPlugin(parts[1]);
+            return CompletableFuture.completedFuture(
+                    success ? CommandResult.success("插件已卸载: " + parts[1])
+                            : CommandResult.error("插件不存在: " + parts[1]));
+        } catch (Exception e) {
+            return CompletableFuture.completedFuture(
+                    CommandResult.error("插件卸载失败: " + e.getMessage()));
+        }
+    }
+
+    /**
+     * /plugin marketplace ... 子命令分发。
+     */
+    private static CompletableFuture<CommandResult> handleMarketplace(String[] parts) {
+        MarketplaceRegistry registry = new MarketplaceRegistry();
+        String action = parts.length >= 2 ? parts[1] : "list";
+        try {
+            return switch (action) {
+                case "add" -> {
+                    if (parts.length < 3) {
+                        yield CompletableFuture.completedFuture(CommandResult.error(
+                                "用法: /plugin marketplace add <dir> [name]"));
+                    }
+                    Path dir = Path.of(parts[2]);
+                    String name = parts.length >= 4 ? parts[3] : null;
+                    String finalName = registry.addFromLocal(name, dir);
+                    yield CompletableFuture.completedFuture(
+                            CommandResult.success("已添加 marketplace: " + finalName));
+                }
+                case "remove", "rm" -> {
+                    if (parts.length < 3) {
+                        yield CompletableFuture.completedFuture(CommandResult.error(
+                                "用法: /plugin marketplace remove <name>"));
+                    }
+                    boolean removed = registry.remove(parts[2]);
+                    yield CompletableFuture.completedFuture(removed
+                            ? CommandResult.success("已删除 marketplace: " + parts[2])
+                            : CommandResult.error("marketplace 不存在: " + parts[2]));
+                }
+                case "list", "ls" -> {
+                    Map<String, Object> desc = registry.describe();
+                    if (desc.isEmpty()) {
+                        yield CompletableFuture.completedFuture(
+                                CommandResult.success("没有已注册的 marketplace"));
+                    }
+                    StringBuilder sb = new StringBuilder("已注册的 marketplace:\n");
+                    desc.forEach((k, v) -> sb.append("  - ").append(k).append(": ").append(v).append("\n"));
+                    yield CompletableFuture.completedFuture(
+                            CommandResult.success(sb.toString().trim()));
+                }
+                case "plugins" -> {
+                    if (parts.length < 3) {
+                        yield CompletableFuture.completedFuture(CommandResult.error(
+                                "用法: /plugin marketplace plugins <name>"));
+                    }
+                    List<MarketplaceDefinition.PluginRef> plugins = registry.listPlugins(parts[2]);
+                    if (plugins.isEmpty()) {
+                        yield CompletableFuture.completedFuture(CommandResult.success(
+                                "marketplace " + parts[2] + " 无插件或不可用"));
+                    }
+                    StringBuilder sb = new StringBuilder("marketplace 插件列表:\n");
+                    for (MarketplaceDefinition.PluginRef p : plugins) {
+                        sb.append("  - ").append(p.getName());
+                        if (p.getDescription() != null) sb.append(" — ").append(p.getDescription());
+                        sb.append(" [source=").append(p.getSource()).append("]\n");
+                    }
+                    yield CompletableFuture.completedFuture(
+                            CommandResult.success(sb.toString().trim()));
+                }
+                default -> CompletableFuture.completedFuture(CommandResult.success(
+                        "用法: /plugin marketplace [add|remove|list|plugins]"));
+            };
+        } catch (Exception e) {
+            return CompletableFuture.completedFuture(
+                    CommandResult.error("marketplace 操作失败: " + e.getMessage()));
+        }
     }
 
     /**

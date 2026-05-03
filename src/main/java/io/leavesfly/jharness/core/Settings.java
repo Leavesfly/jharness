@@ -18,9 +18,29 @@ import java.util.*;
  * 包含所有配置选项，支持多层配置覆盖。
  */
 public class Settings {
-    private String model = "qwen3-max";
+    /**
+     * 默认模型：Ollama 上的 qwen3.5:4b（用户需自行 {@code ollama pull qwen3.5:4b} 拉取）。
+     * 允许通过环境变量 {@code JHARNESS_MODEL} / {@code OPENAI_MODEL} 或 {@code ~/.jharness/settings.json} 覆盖。
+     */
+    public static final String DEFAULT_MODEL = "qwen3.5:4b";
+    /**
+     * 默认 API Base URL：本地 Ollama 的 OpenAI 兼容端点。
+     * 允许通过环境变量 {@code OPENAI_BASE_URL} / {@code ANTHROPIC_BASE_URL} 或配置文件覆盖。
+     */
+    public static final String DEFAULT_BASE_URL = "http://localhost:11434/v1";
+    /**
+     * 默认 Provider：openai 协议（项目已统一使用 OpenAI 兼容协议客户端）。
+     */
+    public static final String DEFAULT_PROVIDER = "openai";
+    /**
+     * 占位 API Key：当使用本地 Ollama 端点且未显式配置 API Key 时，使用此占位符启动，
+     * 便于开箱即用。Ollama 本地服务不校验 Authorization 头。
+     */
+    public static final String LOCAL_PLACEHOLDER_API_KEY = "ollama";
+
+    private String model = DEFAULT_MODEL;
     private String apiKey;
-    private String baseUrl = "https://dashscope.aliyuncs.com/compatible-mode/v1";
+    private String baseUrl = DEFAULT_BASE_URL;
     private int maxTokens = 4096;
     private String systemPrompt;
     private PermissionMode permissionMode = PermissionMode.DEFAULT;
@@ -48,7 +68,27 @@ public class Settings {
      * 被 JHarnessApplication 装配到 PermissionChecker.addDeniedCommand。
      */
     private List<String> deniedCommandPatterns = new ArrayList<>();
-    private String provider = "anthropic";
+    private String provider = DEFAULT_PROVIDER;
+
+    /**
+     * 【新增】每日预算上限（USD），&lt;=0 表示不限制。命中后 CostTracker 会抛出 BudgetExceededException。
+     */
+    private java.math.BigDecimal dailyBudgetUsd = java.math.BigDecimal.ZERO;
+
+    /** 【新增】OpenAI 兼容端点连接超时（秒），默认 30。 */
+    private int connectTimeoutSeconds = 30;
+    /** 【新增】OpenAI 兼容端点读取超时（秒），默认 300。 */
+    private int readTimeoutSeconds = 300;
+    /** 【新增】OpenAI 兼容端点写入超时（秒），默认 30。 */
+    private int writeTimeoutSeconds = 30;
+
+    /** 【新增】消息压缩的 token 预算，&lt;=0 表示使用 MessageCompactionService 的默认值 32000。 */
+    private int messageCompactionTokenBudget = 0;
+    /** 【新增】消息压缩的条数阈值，&lt;=0 表示使用 MessageCompactionService 的默认值 20。 */
+    private int messageCompactionMaxMessages = 0;
+
+    /** 【新增】会话自动保存目录（相对于 ~/.jharness），默认 sessions。 */
+    private boolean autoSaveSessions = true;
 
     private static final Logger logger = LoggerFactory.getLogger(Settings.class);
     // 统一复用 JacksonUtils 的全局单例，避免项目中散落多份 ObjectMapper 造成的性能/行为差异
@@ -69,6 +109,9 @@ public class Settings {
      */
     private void loadFromEnvironment() {
         String envModel = System.getenv("JHARNESS_MODEL");
+        if (envModel == null) {
+            envModel = System.getenv("OPENAI_MODEL");
+        }
         if (envModel != null) this.model = envModel;
 
         String envApiKey = System.getenv("OPENAI_API_KEY");
@@ -281,6 +324,30 @@ public class Settings {
     public String getProvider() { return provider; }
     public void setProvider(String provider) { this.provider = provider; }
 
+    /** 【新增】每日预算上限（USD）。 */
+    public java.math.BigDecimal getDailyBudgetUsd() { return dailyBudgetUsd; }
+    public void setDailyBudgetUsd(java.math.BigDecimal dailyBudgetUsd) {
+        this.dailyBudgetUsd = dailyBudgetUsd != null ? dailyBudgetUsd : java.math.BigDecimal.ZERO;
+    }
+
+    /** 【新增】OpenAI 超时参数。 */
+    public int getConnectTimeoutSeconds() { return connectTimeoutSeconds; }
+    public void setConnectTimeoutSeconds(int v) { this.connectTimeoutSeconds = v > 0 ? v : 30; }
+    public int getReadTimeoutSeconds() { return readTimeoutSeconds; }
+    public void setReadTimeoutSeconds(int v) { this.readTimeoutSeconds = v > 0 ? v : 300; }
+    public int getWriteTimeoutSeconds() { return writeTimeoutSeconds; }
+    public void setWriteTimeoutSeconds(int v) { this.writeTimeoutSeconds = v > 0 ? v : 30; }
+
+    /** 【新增】消息压缩参数。 */
+    public int getMessageCompactionTokenBudget() { return messageCompactionTokenBudget; }
+    public void setMessageCompactionTokenBudget(int v) { this.messageCompactionTokenBudget = v; }
+    public int getMessageCompactionMaxMessages() { return messageCompactionMaxMessages; }
+    public void setMessageCompactionMaxMessages(int v) { this.messageCompactionMaxMessages = v; }
+
+    /** 【新增】是否在每轮对话后自动保存会话快照。 */
+    public boolean isAutoSaveSessions() { return autoSaveSessions; }
+    public void setAutoSaveSessions(boolean v) { this.autoSaveSessions = v; }
+
     public boolean setPermissionMode(String mode) {
         try {
             this.permissionMode = PermissionMode.valueOf(mode.toUpperCase());
@@ -379,6 +446,41 @@ public class Settings {
             }
             if (root.has("fastMode") && root.get("fastMode").isBoolean()) {
                 settings.fastMode = root.get("fastMode").asBoolean();
+            }
+            // 【新增】加载预算 / 超时 / 压缩相关字段
+            if (root.hasNonNull("dailyBudgetUsd")) {
+                try {
+                    settings.dailyBudgetUsd = new java.math.BigDecimal(
+                            root.get("dailyBudgetUsd").asText());
+                } catch (NumberFormatException nfe) {
+                    logger.warn("dailyBudgetUsd 格式非法，忽略: {}",
+                            root.get("dailyBudgetUsd").asText());
+                }
+            }
+            if (root.has("connectTimeoutSeconds") && root.get("connectTimeoutSeconds").isInt()) {
+                int v = root.get("connectTimeoutSeconds").asInt();
+                if (v > 0) settings.connectTimeoutSeconds = v;
+            }
+            if (root.has("readTimeoutSeconds") && root.get("readTimeoutSeconds").isInt()) {
+                int v = root.get("readTimeoutSeconds").asInt();
+                if (v > 0) settings.readTimeoutSeconds = v;
+            }
+            if (root.has("writeTimeoutSeconds") && root.get("writeTimeoutSeconds").isInt()) {
+                int v = root.get("writeTimeoutSeconds").asInt();
+                if (v > 0) settings.writeTimeoutSeconds = v;
+            }
+            if (root.has("messageCompactionTokenBudget")
+                    && root.get("messageCompactionTokenBudget").isInt()) {
+                settings.messageCompactionTokenBudget =
+                        root.get("messageCompactionTokenBudget").asInt();
+            }
+            if (root.has("messageCompactionMaxMessages")
+                    && root.get("messageCompactionMaxMessages").isInt()) {
+                settings.messageCompactionMaxMessages =
+                        root.get("messageCompactionMaxMessages").asInt();
+            }
+            if (root.has("autoSaveSessions") && root.get("autoSaveSessions").isBoolean()) {
+                settings.autoSaveSessions = root.get("autoSaveSessions").asBoolean();
             }
         } catch (Exception e) {
             // 配置文件解析失败时使用默认值，但记录警告日志便于排查

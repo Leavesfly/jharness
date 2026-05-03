@@ -18,6 +18,23 @@ public class LoadedPlugin {
     private List<SkillDefinition> skills = new ArrayList<>();
     private Map<String, List<Object>> hooks = new HashMap<>();
     private Map<String, Object> mcpServers = new HashMap<>();
+    /**
+     * 插件提供的 slash commands（来自 plugin/commands/*.md 或 manifest.commandsDir）。
+     *
+     * 复用 {@link SkillDefinition} 作为 Markdown + metadata 的简单容器：
+     * - name:        命令名（不带 `/`），用于 `/xxx` 调用
+     * - description: 命令描述
+     * - content:     Markdown 正文，作为 prompt 模板注入
+     * - source:      固定 "plugin"
+     */
+    private List<SkillDefinition> commandPrompts = new ArrayList<>();
+    /**
+     * 插件提供的子代理定义（来自 plugin/agents/*.md 或 manifest.agentsDir）。
+     * 复用 SkillDefinition 承载（content 作为子代理的 system prompt）。
+     */
+    private List<SkillDefinition> agentDefs = new ArrayList<>();
+    /** @deprecated 历史兼容字段，现已被 {@link #commandPrompts} 替代 */
+    @Deprecated
     private List<SkillDefinition> commands = new ArrayList<>();
 
     public LoadedPlugin() {}
@@ -82,6 +99,28 @@ public class LoadedPlugin {
 
     public void setCommands(List<SkillDefinition> commands) {
         this.commands = commands;
+    }
+
+    /**
+     * 【P0-1】插件提供的 slash command 模板（Markdown 形式的 prompt 模板）。
+     */
+    public List<SkillDefinition> getCommandPrompts() {
+        return commandPrompts;
+    }
+
+    public void setCommandPrompts(List<SkillDefinition> commandPrompts) {
+        this.commandPrompts = commandPrompts == null ? new ArrayList<>() : commandPrompts;
+    }
+
+    /**
+     * 【P0-2】插件提供的子代理定义（Markdown 形式的 agent 说明）。
+     */
+    public List<SkillDefinition> getAgentDefs() {
+        return agentDefs;
+    }
+
+    public void setAgentDefs(List<SkillDefinition> agentDefs) {
+        this.agentDefs = agentDefs == null ? new ArrayList<>() : agentDefs;
     }
 
     public String getName() {

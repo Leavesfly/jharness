@@ -1,0 +1,10 @@
+{
+  "name": "builtin-defaults",
+  "version": "1.0.0",
+  "description": "JHarness 默认开箱即用插件，提供基础技能与 Hook 示例。可在 ~/.jharness/plugins/builtin-defaults 下修改。",
+  "author": "JHarness",
+  "license": "Apache-2.0",
+  "enabledByDefault": true,
+  "skillsDir": "skills",
+  "hooksFile": "hooks.json"
+}

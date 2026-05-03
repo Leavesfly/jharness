@@ -1,0 +1,48 @@
+{
+  "_comment": "JHarness 默认配置模板。首次启动时由 SettingsBootstrap 拷贝到 ~/.jharness/settings.json，可自行修改。",
+  "model": "qwen3.5:4b",
+  "baseUrl": "http://localhost:11434/v1",
+  "provider": "openai",
+  "maxTokens": 4096,
+  "maxTurns": 8,
+  "effort": "medium",
+  "passes": 1,
+  "theme": "default",
+  "vimEnabled": false,
+  "voiceEnabled": false,
+  "fastMode": false,
+  "outputStyle": "default",
+  "permissionMode": "DEFAULT",
+  "autoSaveSessions": true,
+  "connectTimeoutSeconds": 30,
+  "readTimeoutSeconds": 300,
+  "writeTimeoutSeconds": 30,
+  "dailyBudgetUsd": 0,
+  "allowedTools": [],
+  "deniedTools": [],
+  "pathRules": [
+    { "pattern": "**/.git/**", "allow": false },
+    { "pattern": "**/.ssh/**", "allow": false },
+    { "pattern": "**/.aws/**", "allow": false },
+    { "pattern": "**/.kube/**", "allow": false },
+    { "pattern": "**/node_modules/**", "allow": false },
+    { "pattern": "**/target/**", "allow": false },
+    { "pattern": "**/build/**", "allow": false },
+    { "pattern": "**/.env*", "allow": false }
+  ],
+  "deniedCommandPatterns": [
+    "rm -rf /*",
+    "rm -rf ~",
+    "rm -rf $HOME*",
+    "sudo rm *",
+    "mkfs*",
+    "dd if=*",
+    ":(){ :|:& };:",
+    "curl * | sh",
+    "wget * | sh"
+  ],
+  "enabledPlugins": {
+    "builtin-defaults": true
+  },
+  "mcpServers": {}
+}

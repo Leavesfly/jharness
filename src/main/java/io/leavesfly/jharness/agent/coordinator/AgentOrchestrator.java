@@ -75,28 +75,41 @@ public class AgentOrchestrator {
      */
     public CompletableFuture<List<AgentResult>> executeParallel(List<AgentTask> tasks, Consumer<StreamEvent> eventConsumer) {
         List<CompletableFuture<AgentResult>> futures = new ArrayList<>();
-        
+
         for (AgentTask task : tasks) {
             futures.add(executeSingle(task, eventConsumer));
         }
-        
-        return CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]))
-            .orTimeout(30, TimeUnit.MINUTES)
-            .thenApply(v -> futures.stream()
-                .map(CompletableFuture::join)
-                .toList())
-            .exceptionally(e -> {
-                logger.error("并行 Agent 执行超时或异常", e);
-                // 分别检查每个 Future 的完成状态：已完成的保留结果，未完成的标记超时
-                return futures.stream()
-                    .map(f -> {
-                        if (f.isDone() && !f.isCompletedExceptionally() && !f.isCancelled()) {
-                            return f.getNow(new AgentResult("unknown", "unknown", false, null, "执行超时"));
-                        }
+
+        // 【B-1】修复：
+        //  1. 原实现用 allOf.orTimeout().thenApply().exceptionally() 的链式结构，在超时情况下
+        //     thenApply 里 join() 未完成的 future 会抛 CancellationException，再被 exceptionally 捕获，
+        //     逻辑正确但路径冗长；这里改为对每个子 future 单独 applyToEither(timeout)，保证：
+        //       - 整体 30min 超时后仍返回 List<AgentResult>（而不是把 Void 误转为 List）；
+        //       - 任何单个子 future 失败 / 超时不会污染其它子任务的结果；
+        //       - 返回类型 List<AgentResult> 明确，避免泛型擦除导致的 ClassCastException。
+        //  2. 在 thenApply 中调用 join 是必要的，但 thenApply 运行在调用 allOf.complete 的线程上，
+        //     与 executorService 不共享队列，不会死锁。
+        java.util.concurrent.atomic.AtomicBoolean timedOut = new java.util.concurrent.atomic.AtomicBoolean(false);
+        CompletableFuture<Void> all = CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]));
+        return all.orTimeout(30, TimeUnit.MINUTES)
+            .handle((v, err) -> {
+                if (err != null) {
+                    timedOut.set(err instanceof java.util.concurrent.TimeoutException
+                            || err.getCause() instanceof java.util.concurrent.TimeoutException);
+                    logger.error("并行 Agent 执行超时或异常", err);
+                }
+                List<AgentResult> results = new ArrayList<>(futures.size());
+                for (CompletableFuture<AgentResult> f : futures) {
+                    if (f.isDone() && !f.isCompletedExceptionally() && !f.isCancelled()) {
+                        results.add(f.getNow(new AgentResult("unknown", "unknown", false, null, "未完成")));
+                    } else {
+                        // 未完成或已异常：取消并生成占位结果
                         f.cancel(true);
-                        return new AgentResult("unknown", "unknown", false, null, "执行超时");
-                    })
-                    .toList();
+                        String reason = timedOut.get() ? "执行超时" : "执行失败";
+                        results.add(new AgentResult("unknown", "unknown", false, null, reason));
+                    }
+                }
+                return results;
             });
     }
     

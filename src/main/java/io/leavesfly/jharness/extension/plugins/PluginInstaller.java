@@ -1,5 +1,6 @@
 package io.leavesfly.jharness.extension.plugins;
 
+import io.leavesfly.jharness.extension.plugins.trust.TrustStore;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -9,15 +10,25 @@ import java.nio.file.attribute.BasicFileAttributes;
 import java.util.stream.Stream;
 
 /**
- * 插件安装器
+ * 插件安装器。
+ *
+ * 【P3】装配 {@link TrustStore}：安装前对 manifest.author 做信任评估，由调用方传入策略。
  */
 public class PluginInstaller {
     private static final Logger logger = LoggerFactory.getLogger(PluginInstaller.class);
 
     /**
-     * 安装插件
+     * 安装插件（默认策略：WARN，未知 author 记录警告但允许通过）。
      */
     public static boolean installPlugin(Path sourceDir) throws IOException {
+        return installPlugin(sourceDir, new TrustStore(), TrustStore.TrustPolicy.WARN);
+    }
+
+    /**
+     * 安装插件（可指定 TrustStore 与策略），用于单元测试 / 批量脚本。
+     */
+    public static boolean installPlugin(Path sourceDir, TrustStore trustStore, TrustStore.TrustPolicy policy)
+            throws IOException {
         if (!Files.exists(sourceDir) || !Files.isDirectory(sourceDir)) {
             throw new IllegalArgumentException("Source directory does not exist: " + sourceDir);
         }
@@ -36,6 +47,16 @@ public class PluginInstaller {
         if (pluginName == null || pluginName.contains("/") || pluginName.contains("\\")
                 || pluginName.contains("..") || pluginName.isBlank()) {
             throw new IllegalArgumentException("Invalid plugin name: " + pluginName);
+        }
+
+        // 【P3】信任链检查：若 author 不在信任列表，按策略决定是否拒绝
+        if (trustStore != null) {
+            if (!trustStore.evaluate(manifest.getAuthor(), policy == null ? TrustStore.TrustPolicy.WARN : policy)) {
+                throw new SecurityException("插件 author 未被信任，已拒绝安装: "
+                        + (manifest.getAuthor() == null ? "<unknown>" : manifest.getAuthor())
+                        + " (插件: " + pluginName + ")。"
+                        + "可执行 /plugin trust <author> 将其加入信任列表。");
+            }
         }
 
         Path userPluginsDir = PluginPaths.getUserPluginsDir();

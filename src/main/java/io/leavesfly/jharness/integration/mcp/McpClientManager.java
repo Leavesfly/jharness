@@ -93,13 +93,53 @@ public class McpClientManager {
     
     /**
      * 连接所有配置的服务器
+     *
+     * 【改造】连接完成后（无论成功/失败）会回调所有通过 {@link #onConnected(Runnable)} 注册的监听器，
+     * 便于 ToolRegistry 在 MCP 工具可用后补注册 McpToolAdapter。
      */
     public CompletableFuture<Void> connectAll() {
         List<CompletableFuture<Void>> futures = new ArrayList<>();
         for (Map.Entry<String, Map<String, Object>> entry : serverConfigs.entrySet()) {
             futures.add(connectServer(entry.getKey(), entry.getValue()));
         }
-        return CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]));
+        return CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]))
+                .whenComplete((v, err) -> fireConnectedListeners());
+    }
+
+    /**
+     * 【新增】连接完成监听器列表。使用 CopyOnWriteArrayList 保证并发读写安全。
+     */
+    private final List<Runnable> connectedListeners =
+            new java.util.concurrent.CopyOnWriteArrayList<>();
+
+    /**
+     * 【新增】注册"连接完成"监听器。{@link #connectAll()} 完成后（无论成功/失败）都会回调。
+     * 如果注册时已有连接好的服务器，会立刻触发一次回调，避免竞态导致错过事件。
+     */
+    public void onConnected(Runnable listener) {
+        if (listener == null) return;
+        connectedListeners.add(listener);
+        // 若已经有 connected 会话，立即补发一次，避免 addServer 在 connectAll 后发生
+        boolean hasConnected = statuses.values().stream()
+                .anyMatch(s -> "connected".equals(s.getState()));
+        if (hasConnected) {
+            try {
+                listener.run();
+            } catch (Exception e) {
+                logger.warn("MCP onConnected 监听器执行失败（忽略）", e);
+            }
+        }
+    }
+
+    /** 【新增】触发所有"连接完成"监听器，单个监听器异常不影响其它监听器。 */
+    private void fireConnectedListeners() {
+        for (Runnable r : connectedListeners) {
+            try {
+                r.run();
+            } catch (Exception e) {
+                logger.warn("MCP onConnected 监听器执行失败（忽略）", e);
+            }
+        }
     }
     
     /**

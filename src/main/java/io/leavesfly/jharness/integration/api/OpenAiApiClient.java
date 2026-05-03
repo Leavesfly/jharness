@@ -92,19 +92,29 @@ public class OpenAiApiClient implements LlmProvider {
      */
     public OpenAiApiClient(String baseUrl, String apiKey, String model, int maxTokens,
                            int connectTimeoutSeconds, int readTimeoutSeconds, int writeTimeoutSeconds) {
-        if (apiKey == null || apiKey.isBlank()) {
-            throw new IllegalArgumentException("API Key 不能为空，请设置环境变量 OPENAI_API_KEY 或 ANTHROPIC_API_KEY");
-        }
         if (connectTimeoutSeconds <= 0 || readTimeoutSeconds <= 0 || writeTimeoutSeconds <= 0) {
             throw new IllegalArgumentException(
                     "超时参数必须为正数: connect=" + connectTimeoutSeconds
                             + ", read=" + readTimeoutSeconds
                             + ", write=" + writeTimeoutSeconds);
         }
-        this.completionsUrl = buildCompletionsUrl(baseUrl != null ? baseUrl : "https://api.openai.com");
+        String resolvedBaseUrl = baseUrl != null ? baseUrl : "https://api.openai.com";
+        // 【开箱即用】当 baseUrl 指向本地 Ollama 等本地端点且 apiKey 为空时，使用占位符 "ollama"，
+        // Ollama 本地服务不校验 Authorization 头，这样用户无需显式配置 API Key 即可启动。
+        String effectiveApiKey = apiKey;
+        if (effectiveApiKey == null || effectiveApiKey.isBlank()) {
+            if (isLocalEndpoint(resolvedBaseUrl)) {
+                effectiveApiKey = "ollama";
+                logger.info("检测到本地端点 {}，使用占位 API Key 启动（适配 Ollama 等本地 LLM 服务）", resolvedBaseUrl);
+            } else {
+                throw new IllegalArgumentException(
+                        "API Key 不能为空，请设置环境变量 OPENAI_API_KEY 或 ANTHROPIC_API_KEY，或将 baseUrl 指向本地端点（如 http://localhost:11434/v1）");
+            }
+        }
+        this.completionsUrl = buildCompletionsUrl(resolvedBaseUrl);
         logger.info("API 请求地址: {}, 超时(s) connect={}/read={}/write={}",
                 completionsUrl, connectTimeoutSeconds, readTimeoutSeconds, writeTimeoutSeconds);
-        this.apiKey = apiKey;
+        this.apiKey = effectiveApiKey;
         this.model = model;
         this.maxTokens = maxTokens;
         this.retryPolicy = RetryPolicy.defaultPolicy();
@@ -371,6 +381,35 @@ public class OpenAiApiClient implements LlmProvider {
             return url + CHAT_COMPLETIONS_SUFFIX;
         }
         return url + CHAT_COMPLETIONS_PATH;
+    }
+
+    /**
+     * 判断 baseUrl 是否指向本地端点（localhost / 127.0.0.1 / ::1 / 0.0.0.0），
+     * 用于决定是否可以在空 API Key 场景下放行并使用占位 Key。
+     *
+     * <p>采用 {@link java.net.URI} 解析 host，避免"url 里恰好包含 localhost 字样
+     * 但 host 并非本地地址"导致的误判。解析失败时回退到字符串包含判断，保持宽松兼容。
+     */
+    public static boolean isLocalEndpoint(String baseUrl) {
+        if (baseUrl == null || baseUrl.isBlank()) return false;
+        try {
+            String normalized = baseUrl.contains("://") ? baseUrl : ("http://" + baseUrl);
+            java.net.URI uri = java.net.URI.create(normalized);
+            String host = uri.getHost();
+            if (host == null) return false;
+            host = host.toLowerCase();
+            return host.equals("localhost")
+                    || host.equals("127.0.0.1")
+                    || host.equals("0.0.0.0")
+                    || host.equals("::1")
+                    || host.equals("[::1]");
+        } catch (Exception e) {
+            String lower = baseUrl.toLowerCase();
+            return lower.contains("localhost")
+                    || lower.contains("127.0.0.1")
+                    || lower.contains("0.0.0.0")
+                    || lower.contains("::1");
+        }
     }
 
     /**

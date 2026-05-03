@@ -77,8 +77,13 @@ public class TeamRecord {
         this.status = status;
     }
     
-    void setMetadata(String key, String value) {
-        metadata.put(key, value);
+    /**
+     * 设置团队元数据。可见性从 package-private 升为 public，
+     * 以便 {@code JHarnessApplication} 在注册 plugin subagent 时标注来源信息。
+     */
+    public void setMetadata(String key, String value) {
+        if (key == null) return;
+        metadata.put(key, value == null ? "" : value);
     }
     
     /**

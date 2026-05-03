@@ -102,7 +102,19 @@ public class PluginLoader {
         // 加载 MCP 配置
         plugin.setMcpServers(loadPluginMcp(pluginPath));
 
-        logger.info("已加载插件: {} v{}", manifest.getName(), manifest.getVersion());
+        // 【P0-1】加载 plugin 提供的 slash commands（commands/*.md 或 manifest.commandsDir）
+        plugin.setCommandPrompts(loadPluginCommands(pluginPath, manifest));
+
+        // 【P0-2】加载 plugin 提供的 subagents（agents/*.md 或 manifest.agentsDir）
+        plugin.setAgentDefs(loadPluginAgents(pluginPath, manifest));
+
+        logger.info("已加载插件: {} v{} (skills={}, hooks={}, commands={}, agents={}, mcp={})",
+                manifest.getName(), manifest.getVersion(),
+                plugin.getSkills().size(),
+                plugin.getHooks().size(),
+                plugin.getCommandPrompts().size(),
+                plugin.getAgentDefs().size(),
+                plugin.getMcpServers().size());
         return plugin;
     }
 
@@ -203,5 +215,56 @@ public class PluginLoader {
             }
         }
         return new java.util.HashMap<>();
+    }
+
+    /**
+     * 【P0-1】加载 plugin 提供的 slash commands。
+     *
+     * 扫描 <pluginDir>/commands/ 与 <pluginDir>/<manifest.commandsDir>/ 下所有 *.md 文件，
+     * 复用 SkillLoader 的 Markdown 解析（YAML front-matter 兼容），source 固定为 "plugin"。
+     */
+    private static List<SkillDefinition> loadPluginCommands(Path pluginPath, PluginManifest manifest) {
+        List<SkillDefinition> commands = new ArrayList<>();
+
+        Path defaultDir = pluginPath.resolve("commands");
+        if (Files.exists(defaultDir) && Files.isDirectory(defaultDir)) {
+            commands.addAll(SkillLoader.loadSkillsFromDirectory(defaultDir, "plugin"));
+        }
+
+        if (manifest != null && manifest.getCommandsDir() != null && !manifest.getCommandsDir().isBlank()) {
+            Path customDir = pluginPath.resolve(manifest.getCommandsDir());
+            // 与默认目录不同时才扫，避免重复
+            if (Files.exists(customDir) && Files.isDirectory(customDir)
+                    && !customDir.normalize().equals(defaultDir.normalize())) {
+                commands.addAll(SkillLoader.loadSkillsFromDirectory(customDir, "plugin"));
+            }
+        }
+
+        return commands;
+    }
+
+    /**
+     * 【P0-2】加载 plugin 提供的 subagents。
+     *
+     * 扫描 <pluginDir>/agents/ 与 <pluginDir>/<manifest.agentsDir>/ 下所有 *.md 文件，
+     * Markdown 正文会被用作子代理的 system prompt（或任务模板）。
+     */
+    private static List<SkillDefinition> loadPluginAgents(Path pluginPath, PluginManifest manifest) {
+        List<SkillDefinition> agents = new ArrayList<>();
+
+        Path defaultDir = pluginPath.resolve("agents");
+        if (Files.exists(defaultDir) && Files.isDirectory(defaultDir)) {
+            agents.addAll(SkillLoader.loadSkillsFromDirectory(defaultDir, "plugin"));
+        }
+
+        if (manifest != null && manifest.getAgentsDir() != null && !manifest.getAgentsDir().isBlank()) {
+            Path customDir = pluginPath.resolve(manifest.getAgentsDir());
+            if (Files.exists(customDir) && Files.isDirectory(customDir)
+                    && !customDir.normalize().equals(defaultDir.normalize())) {
+                agents.addAll(SkillLoader.loadSkillsFromDirectory(customDir, "plugin"));
+            }
+        }
+
+        return agents;
     }
 }
