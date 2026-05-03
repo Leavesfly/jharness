@@ -1,6 +1,8 @@
 package io.leavesfly.jharness.tools;
 
 import io.leavesfly.jharness.core.Settings;
+import io.leavesfly.jharness.session.permissions.PermissionChecker;
+import io.leavesfly.jharness.session.permissions.PermissionMode;
 import io.leavesfly.jharness.tools.input.ExitPlanModeToolInput;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -46,6 +48,13 @@ public class ExitPlanModeTool extends BaseTool<ExitPlanModeToolInput> {
                 }
                 EnterPlanModeTool.clearPlan();
                 settings.setPermissionMode("default");
+                // FP-2：同步运行时 PermissionChecker，避免 Settings 与真实鉴权状态漂移。
+                PermissionChecker checker = context != null ? context.getPermissionChecker() : null;
+                if (checker != null) {
+                    checker.setMode(PermissionMode.DEFAULT);
+                } else {
+                    logger.warn("退出 Plan Mode 时未拿到运行时 PermissionChecker，模式切换可能未生效");
+                }
                 return ToolResult.success("已退出计划模式，恢复到默认模式。" + planSummary);
             } catch (Exception e) {
                 logger.error("切换模式失败", e);

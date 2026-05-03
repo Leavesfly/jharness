@@ -5,6 +5,8 @@ import io.leavesfly.jharness.command.commands.CommandResult;
 import io.leavesfly.jharness.command.commands.SimpleSlashCommand;
 import io.leavesfly.jharness.command.commands.SlashCommand;
 import io.leavesfly.jharness.core.Settings;
+import io.leavesfly.jharness.session.permissions.PermissionChecker;
+import io.leavesfly.jharness.session.permissions.PermissionMode;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -71,7 +73,9 @@ public class ConfigCommandHandler {
 
     public static SlashCommand createPermissionsCommand() {
         return cmd("permissions", "显示或设置权限模式", (args, ctx) -> {
-            Settings s = Settings.load();
+            // FP-2：/permissions set 必须同时更新运行时 PermissionChecker，否则 Settings 与
+            // 真正在工作的 PermissionChecker 状态漂移，模式切换无法生效。
+            Settings s = ctx != null && ctx.getSettings() != null ? ctx.getSettings() : Settings.load();
             if (args.isEmpty() || "show".equals(args.get(0))) {
                 return CommandResult.success(
                         "权限: " + s.getPermissionMode()
@@ -79,6 +83,7 @@ public class ConfigCommandHandler {
                                 + "\n禁止: " + s.getDeniedTools());
             }
             if ("set".equals(args.get(0)) && args.size() >= 2 && s.setPermissionMode(args.get(1))) {
+                syncRuntimeMode(ctx, s.getPermissionMode());
                 s.save();
                 return CommandResult.success("权限: " + args.get(1));
             }
@@ -88,24 +93,45 @@ public class ConfigCommandHandler {
 
     public static SlashCommand createPlanCommand() {
         return cmd("plan", "切换计划模式", (args, ctx) -> {
-            Settings s = Settings.load();
+            // FP-2：/plan on/off/toggle 必须同步 PermissionChecker 的 mode，否则用户以为进入
+            // 计划模式但写操作依然会被执行。
+            Settings s = ctx != null && ctx.getSettings() != null ? ctx.getSettings() : Settings.load();
             String action = args.isEmpty() ? "toggle" : args.get(0);
             if ("on".equals(action) || "enter".equals(action)) {
                 s.setPermissionMode("plan");
+                syncRuntimeMode(ctx, PermissionMode.PLAN);
                 s.save();
                 return CommandResult.success("计划模式已启用");
             }
             if ("off".equals(action) || "exit".equals(action)) {
                 s.setPermissionMode("default");
+                syncRuntimeMode(ctx, PermissionMode.DEFAULT);
                 s.save();
                 return CommandResult.success("计划模式已禁用");
             }
             String cur = s.getPermissionMode().name().toLowerCase();
             String next = "plan".equals(cur) ? "default" : "plan";
             s.setPermissionMode(next);
+            syncRuntimeMode(ctx, s.getPermissionMode());
             s.save();
             return CommandResult.success("计划模式: " + ("plan".equals(next) ? "已启用" : "已禁用"));
         });
+    }
+
+    /**
+     * FP-2：把 Settings 中的权限模式切换同步到运行时 PermissionChecker。
+     * 若上下文里没有 PermissionChecker（比如单元测试场景），记录 debug 日志后降级。
+     */
+    private static void syncRuntimeMode(CommandContext ctx, PermissionMode mode) {
+        if (ctx == null) {
+            return;
+        }
+        PermissionChecker checker = ctx.getPermissionChecker();
+        if (checker == null) {
+            logger.debug("未注入运行时 PermissionChecker，模式切换 {} 仅落到 Settings", mode);
+            return;
+        }
+        checker.setMode(mode);
     }
 
     public static SlashCommand createSkillsCommand() {

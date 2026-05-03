@@ -15,6 +15,7 @@ import io.leavesfly.jharness.core.engine.stream.AssistantTurnComplete;
 import io.leavesfly.jharness.core.engine.stream.StreamEvent;
 import io.leavesfly.jharness.core.engine.stream.ToolExecutionCompleted;
 import io.leavesfly.jharness.core.engine.stream.ToolExecutionStarted;
+import io.leavesfly.jharness.session.permissions.PermissionChecker;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -160,9 +161,12 @@ public class TerminalUI {
                     commandRegistry.lookup(input).ifPresentOrElse(
                         slashCmd -> {
                             List<String> argList = args.isEmpty() ? List.of() : List.of(args.split("\\s+"));
+                            // FP-2：向命令上下文注入运行时 PermissionChecker，/plan、/permissions set 才能同步生效。
+                            PermissionChecker runtimeChecker =
+                                    (queryEngine != null) ? queryEngine.getPermissionChecker() : null;
                             CommandContext ctx = new CommandContext(
                                     java.nio.file.Paths.get(System.getProperty("user.dir")),
-                                    queryEngine, null, null, null);
+                                    queryEngine, null, runtimeChecker, null);
                             slashCmd.execute(argList, ctx, event -> {})
                                 .thenAccept(result -> addSystemMessage(result.getMessage()));
                         },

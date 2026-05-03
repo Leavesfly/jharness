@@ -36,6 +36,18 @@ public class Settings {
     private Map<String, Boolean> enabledPlugins = new HashMap<>();
     private List<String> allowedTools = new ArrayList<>();
     private List<String> deniedTools = new ArrayList<>();
+    /**
+     * FP-1：路径规则列表。每条规则的结构：
+     *   { "pattern": "src/**", "allow": true }
+     *   { "pattern": "/etc/**", "allow": false }
+     * 运行时被 JHarnessApplication.buildQueryEngine 装配到 PermissionChecker.addPathRule。
+     */
+    private List<Map<String, Object>> pathRules = new ArrayList<>();
+    /**
+     * FP-1：命令黑名单模式列表（glob 风格，如 "rm -rf *"、"sudo *"）。
+     * 被 JHarnessApplication 装配到 PermissionChecker.addDeniedCommand。
+     */
+    private List<String> deniedCommandPatterns = new ArrayList<>();
     private String provider = "anthropic";
 
     private static final Logger logger = LoggerFactory.getLogger(Settings.class);
@@ -256,6 +268,16 @@ public class Settings {
     public void setAllowedTools(List<String> allowedTools) { this.allowedTools = allowedTools; }
     public List<String> getDeniedTools() { return deniedTools; }
     public void setDeniedTools(List<String> deniedTools) { this.deniedTools = deniedTools; }
+    /** FP-1：路径规则列表（装配到 PermissionChecker.addPathRule）。 */
+    public List<Map<String, Object>> getPathRules() { return pathRules; }
+    public void setPathRules(List<Map<String, Object>> pathRules) {
+        this.pathRules = pathRules != null ? pathRules : new ArrayList<>();
+    }
+    /** FP-1：命令黑名单（装配到 PermissionChecker.addDeniedCommand）。 */
+    public List<String> getDeniedCommandPatterns() { return deniedCommandPatterns; }
+    public void setDeniedCommandPatterns(List<String> deniedCommandPatterns) {
+        this.deniedCommandPatterns = deniedCommandPatterns != null ? deniedCommandPatterns : new ArrayList<>();
+    }
     public String getProvider() { return provider; }
     public void setProvider(String provider) { this.provider = provider; }
 
@@ -317,6 +339,17 @@ public class Settings {
             }
             if (root.hasNonNull("deniedTools")) {
                 settings.deniedTools = MAPPER.convertValue(root.get("deniedTools"),
+                        MAPPER.getTypeFactory().constructCollectionType(List.class, String.class));
+            }
+            // FP-1：反序列化 pathRules / deniedCommandPatterns
+            if (root.hasNonNull("pathRules")) {
+                settings.pathRules = MAPPER.convertValue(root.get("pathRules"),
+                        MAPPER.getTypeFactory().constructCollectionType(
+                                List.class,
+                                MAPPER.getTypeFactory().constructMapType(Map.class, String.class, Object.class)));
+            }
+            if (root.hasNonNull("deniedCommandPatterns")) {
+                settings.deniedCommandPatterns = MAPPER.convertValue(root.get("deniedCommandPatterns"),
                         MAPPER.getTypeFactory().constructCollectionType(List.class, String.class));
             }
             if (root.hasNonNull("mcpServers")) {

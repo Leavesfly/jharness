@@ -4,6 +4,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.leavesfly.jharness.integration.mcp.types.McpConnectionStatus;
+import io.leavesfly.jharness.session.permissions.PermissionChecker;
+import io.leavesfly.jharness.session.permissions.PermissionDecision;
 import io.leavesfly.jharness.util.JacksonUtils;
 import io.leavesfly.jharness.util.UrlSafetyValidator;
 import okhttp3.*;
@@ -55,6 +57,19 @@ public class McpClientManager {
             new java.util.concurrent.ThreadPoolExecutor.CallerRunsPolicy());
     private final AtomicInteger requestIdCounter = new AtomicInteger(0);
     private final OkHttpClient sharedHttpClient;
+
+    /**
+     * FP-3：可选的 PermissionChecker。注入后，stdio 类型的 MCP 服务器在 fork 子进程前
+     * 会先走权限评估，避免通过 MCP 配置绕过命令黑名单。
+     */
+    private volatile PermissionChecker permissionChecker;
+
+    /**
+     * FP-3：注入 PermissionChecker，使 stdio MCP 服务器与前台工具共用同一套安全栅栏。
+     */
+    public void setPermissionChecker(PermissionChecker permissionChecker) {
+        this.permissionChecker = permissionChecker;
+    }
 
     public McpClientManager() {
         this.sharedHttpClient = new OkHttpClient.Builder()
@@ -118,7 +133,23 @@ public class McpClientManager {
         List<String> args = (List<String>) config.getOrDefault("args", Collections.emptyList());
         Map<String, String> env = (Map<String, String>) config.get("env");
         String cwd = (String) config.get("cwd");
-        
+
+        // FP-3：对 stdio MCP 的启动命令走 PermissionChecker。拼成完整命令行用于黑名单匹配，
+        // 防止通过 mcpServers 配置写入 "rm -rf /" 类命令绕过 bash 工具黑名单。
+        PermissionChecker checker = permissionChecker;
+        if (checker != null) {
+            StringBuilder full = new StringBuilder(command == null ? "" : command);
+            for (String a : args) {
+                full.append(' ').append(a);
+            }
+            PermissionDecision decision = checker.evaluate("bash", false, null, full.toString());
+            if (decision != null && !decision.isAllowed() && !decision.isRequiresConfirmation()) {
+                logger.warn("MCP stdio 服务器启动被权限拒绝: server={}, reason={}",
+                        name, decision.getReason());
+                throw new SecurityException("MCP stdio 命令被权限拒绝: " + decision.getReason());
+            }
+        }
+
         // 构建进程
         ProcessBuilder pb = new ProcessBuilder();
         List<String> cmd = new ArrayList<>();

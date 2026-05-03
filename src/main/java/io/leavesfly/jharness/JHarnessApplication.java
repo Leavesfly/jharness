@@ -187,6 +187,32 @@ public class JHarnessApplication implements Callable<Integer> {
         for (String tool : settings.getDeniedTools()) {
             permissionChecker.addDeniedTool(tool);
         }
+        // FP-1：把配置文件里的 pathRules / deniedCommandPatterns 装配到 PermissionChecker，
+        // 否则路径规则 / 命令黑名单功能虽然实现了但从来不会被触发。
+        for (var rule : settings.getPathRules()) {
+            try {
+                Object pattern = rule.get("pattern");
+                Object allow = rule.get("allow");
+                if (pattern instanceof String p && !p.isBlank()) {
+                    boolean isAllow = allow instanceof Boolean b ? b : Boolean.parseBoolean(String.valueOf(allow));
+                    permissionChecker.addPathRule(p, isAllow);
+                } else {
+                    logger.warn("忽略无效的 pathRule（缺少 pattern 字段）: {}", rule);
+                }
+            } catch (IllegalArgumentException e) {
+                logger.warn("无效的路径规则模式，已忽略: {}", rule, e);
+            }
+        }
+        for (String pattern : settings.getDeniedCommandPatterns()) {
+            if (pattern != null && !pattern.isBlank()) {
+                permissionChecker.addDeniedCommand(pattern);
+            }
+        }
+
+        // FP-3：把 PermissionChecker 注入到后台入口，使 BackgroundTaskManager / McpClientManager
+        // 与前台 bash 工具共享同一套安全栅栏，避免黑名单/规则通过后台通道被绕过。
+        taskManager.setPermissionChecker(permissionChecker);
+        mcpManager.setPermissionChecker(permissionChecker);
 
         String systemPrompt = new SystemPromptBuilder(
                 "你是 JHarness，一个强大的 AI 编程助手。你可以使用工具来帮助用户完成各种任务。")

@@ -219,6 +219,13 @@ public class BashTool extends BaseTool<BashToolInput> {
         String command = input.getCommand();
         String trimmedCmd = command.trim().toLowerCase();
 
+        // FP-5：命令中出现命令分隔 / 管道 / 命令替换 / 后台执行 / 进程替换等复合结构时，
+        // 无法仅凭前缀判断只读性（`ls; rm -rf /` 同样以 ls 开头但显然是写操作）。
+        // 保守起见，一旦命中以下任一特征，直接视为非只读，交给 PermissionChecker 走确认流程。
+        if (containsComplexStructure(command)) {
+            return false;
+        }
+
         // 如果命令包含重定向或管道写操作，则不是只读
         // 注意：这里只做简单检测，复杂场景仍依赖 PermissionChecker 兜底
         if (containsWriteOperator(command)) {
@@ -237,6 +244,36 @@ public class BashTool extends BaseTool<BashToolInput> {
                 || trimmedCmd.startsWith(prefix + " ")
                 || trimmedCmd.startsWith(prefix + "\t")
         );
+    }
+
+    /**
+     * FP-5：检测命令中是否包含可能"串联写操作"的复合结构：
+     *   - 命令分隔符： ;
+     *   - 逻辑连接：   && 、 ||
+     *   - 管道：       |
+     *   - 命令替换：   `...` 、 $(...)
+     *   - 进程替换：   <(...) 、 >(...)
+     *   - 后台执行：   尾部 & （注意区分 && ）
+     *
+     * 这些场景下单凭命令前缀判断只读性极易漏判，一律按非只读处理，交给 PermissionChecker 兜底。
+     * 仅剥离引号内的字面量后再扫描，避免 `echo 'a|b'` 这类字面量被误伤。
+     */
+    private static boolean containsComplexStructure(String command) {
+        String stripped = stripQuoted(command);
+        // 分号 / 管道 / 逻辑连接 / 命令替换 / 进程替换
+        if (stripped.contains(";")
+                || stripped.contains("&&")
+                || stripped.contains("||")
+                || stripped.contains("|")
+                || stripped.contains("`")
+                || stripped.contains("$(")
+                || stripped.contains("<(")
+                || stripped.contains(">(")) {
+            return true;
+        }
+        // 尾部后台执行（非 &&）
+        String trimmed = stripped.trim();
+        return trimmed.endsWith("&") && !trimmed.endsWith("&&");
     }
 
     /**

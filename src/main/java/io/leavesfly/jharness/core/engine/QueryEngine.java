@@ -168,6 +168,14 @@ public class QueryEngine implements AutoCloseable {
     }
 
     /**
+     * FP-2：暴露运行时 PermissionChecker 给 TUI / CLI 的命令处理器，
+     * 让 /plan、/permissions 等命令能把模式切换同步到真正在工作的实例上。
+     */
+    public PermissionChecker getPermissionChecker() {
+        return permissionChecker;
+    }
+
+    /**
      * 获取当前运行时系统提示词
      */
     public String getSystemPrompt() {
@@ -467,7 +475,9 @@ public class QueryEngine implements AutoCloseable {
                 }
 
                 // 执行工具
-                ToolExecutionContext context = new ToolExecutionContext(cwd, null);
+                // FP-2：注入 PermissionChecker，使 EnterPlanModeTool/ExitPlanModeTool 等能把
+                // 模式切换同步到真正在工作的 PermissionChecker 实例，而不仅仅落到 Settings。
+                ToolExecutionContext context = new ToolExecutionContext(cwd, null, permissionChecker);
                 return tool.execute(input, context).join();
 
             } catch (Exception e) {

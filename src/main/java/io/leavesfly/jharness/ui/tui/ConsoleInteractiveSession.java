@@ -10,6 +10,7 @@ import io.leavesfly.jharness.core.engine.stream.AssistantTurnComplete;
 import io.leavesfly.jharness.core.engine.stream.StreamEvent;
 import io.leavesfly.jharness.core.engine.stream.ToolExecutionCompleted;
 import io.leavesfly.jharness.core.engine.stream.ToolExecutionStarted;
+import io.leavesfly.jharness.session.permissions.PermissionChecker;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -197,9 +198,13 @@ public class ConsoleInteractiveSession {
                 var optionalCmd = commandRegistry.lookup(input);
                 if (optionalCmd.isPresent()) {
                     try {
+                        // FP-2：/permissions、/plan 等命令需要通过 CommandContext 拿到 PermissionChecker
+                        // 才能把切模式同步到运行时。这里从 queryEngine 反向获取，避免旧构造方式下为 null。
+                        PermissionChecker runtimeChecker =
+                                (queryEngine != null) ? queryEngine.getPermissionChecker() : null;
                         CommandContext ctx = new CommandContext(
                                 java.nio.file.Paths.get(System.getProperty("user.dir")),
-                                queryEngine, null, null, null);
+                                queryEngine, null, runtimeChecker, null);
                         var result = optionalCmd.get().execute(
                                 parts.length > 1 ? java.util.List.of(parts[1].split("\\s+")) : java.util.List.of(),
                                 ctx, event -> {}).join();
