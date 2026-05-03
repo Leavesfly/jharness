@@ -403,18 +403,45 @@ public class JHarnessApplication implements Callable<Integer> {
             logger.info("AgentTool in_process 模式已配置");
         }
 
-        // P-04：Hook 执行器共享安全栅栏，确保 Hook 里 fork 子进程也走同一套权限评估
+        // P-04：Hook 执行器共享安全栅栏，确保 Hook 里 fork 子进程也走同一套权限评估。
+        // 【Hook 发射点装配】只有在注册表非空时才构造 HookExecutor 并注入到 engine，避免无 Hook
+        // 场景下的反射开销。hookExecutor 生命周期绑定到 engine（close hook 里不需要显式释放，
+        // 因为它本身不持有后台线程 — 所有子进程/HTTP 请求都是临时的）。
         if (hookRegistry.size() > 0) {
             HookExecutor hookExecutor = new HookExecutor(hookRegistry, cwd);
             hookExecutor.setPermissionChecker(permissionChecker);
-            // 触发 SESSION_START（尽力而为，失败不阻断启动）
+
+            // 生成一次性的进程级 session ID，供所有 Hook payload 使用
+            String sessionIdForHook = resumeSessionId != null && !resumeSessionId.isBlank()
+                    ? resumeSessionId
+                    : java.util.UUID.randomUUID().toString().substring(0, 8);
+
+            // 注入到 engine：发 USER_PROMPT_SUBMIT / STOP
+            engine.setHookEmitter(hookExecutor, sessionIdForHook);
+
+            // SESSION_START：尽力而为，失败不阻断启动
             try {
                 hookExecutor.execute(HookEvent.SESSION_START, Map.of(
+                        "session_id", sessionIdForHook,
                         "model", settings.getModel(),
                         "cwd", cwd.toString())).join();
             } catch (Exception e) {
                 logger.warn("SESSION_START Hook 执行失败（忽略）", e);
             }
+
+            // 把 SESSION_END 挂到 engine 的 close hook 上，保证单次 / 交互 / 异常退出时都能发射
+            final HookExecutor finalExecutor = hookExecutor;
+            final String finalSessionId = sessionIdForHook;
+            engine.registerCloseHook(() -> {
+                try {
+                    finalExecutor.execute(HookEvent.SESSION_END, Map.of(
+                            "session_id", finalSessionId,
+                            "model", settings.getModel(),
+                            "cwd", cwd.toString())).join();
+                } catch (Exception ex) {
+                    logger.debug("SESSION_END Hook 执行失败（忽略）: {}", ex.getMessage());
+                }
+            });
         }
 
         // 【P0-wire-up】把已加载插件列表挂到 engine 上，供 buildFullCommandRegistry 在 TUI / 交互模式

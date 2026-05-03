@@ -154,6 +154,11 @@ public class MarketplaceRegistry {
      *
      * <p>source 为相对路径时，基准是 marketplace 根目录；绝对路径则直接使用。
      * 不支持 git+ 前缀（会抛 UnsupportedOperationException，留给后续扩展）。
+     *
+     * <p><b>【安全】</b>解析后的路径必须仍位于 marketplace root 目录内（对相对路径），
+     * 防止恶意 marketplace.json 通过 {@code "source": "../../../etc/passwd"} 之类的
+     * 路径遍历逃逸到 root 之外。对于声明为绝对路径的 source，我们视为 marketplace
+     * 作者的显式意图（通常用于指向 monorepo 中 shared 目录），仅在日志中提示，不做拦截。
      */
     public Path resolvePluginSource(String marketplaceName, String pluginName) {
         Path root = marketplaces.get(marketplaceName);
@@ -175,11 +180,24 @@ public class MarketplaceRegistry {
                 throw new UnsupportedOperationException(
                         "当前版本仅支持本地 marketplace 源，git/http 源尚未实现: " + src);
             }
-            Path abs = Path.of(src);
-            if (!abs.isAbsolute()) {
-                abs = root.resolve(src);
+            Path rawPath = Path.of(src);
+            boolean wasRelative = !rawPath.isAbsolute();
+            Path abs = (wasRelative ? root.resolve(src) : rawPath).toAbsolutePath().normalize();
+
+            // 安全校验：相对路径必须仍落在 marketplace root 内，阻断 ".." 逃逸
+            if (wasRelative) {
+                Path normalizedRoot = root.toAbsolutePath().normalize();
+                if (!abs.startsWith(normalizedRoot)) {
+                    throw new SecurityException(
+                            "marketplace " + marketplaceName + " 中插件 " + pluginName
+                                    + " 的 source 路径越过 root 目录，已拒绝: " + src
+                                    + " -> " + abs + " (root: " + normalizedRoot + ")");
+                }
+            } else {
+                logger.info("marketplace {} 中插件 {} 使用绝对路径 source: {}",
+                        marketplaceName, pluginName, abs);
             }
-            return abs.toAbsolutePath().normalize();
+            return abs;
         }
         throw new IllegalArgumentException("marketplace " + marketplaceName
                 + " 中未找到插件: " + pluginName);

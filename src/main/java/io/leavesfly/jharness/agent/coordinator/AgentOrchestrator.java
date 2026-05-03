@@ -30,6 +30,12 @@ public class AgentOrchestrator {
     private QueryEngineFactory queryEngineFactory;
 
     /**
+     * 【新增】可选的 Hook 发射器。注入后，{@link #executeSingle} 结束时会发 {@code SUBAGENT_STOP}。
+     * 弱类型持有，避免 agent.coordinator 强依赖 agent.hooks，发射时按反射调用。
+     */
+    private volatile Object hookEmitter;
+
+    /**
      * QueryEngine 工厂接口，用于为每个 Agent 创建独立的引擎实例
      */
     @FunctionalInterface
@@ -64,6 +70,39 @@ public class AgentOrchestrator {
 
     public void setQueryEngineFactory(QueryEngineFactory factory) {
         this.queryEngineFactory = factory;
+    }
+
+    /**
+     * 【新增】注入 Hook 发射器（{@code io.leavesfly.jharness.agent.hooks.HookExecutor}），
+     * 用于在子代理执行结束后发射 {@code SUBAGENT_STOP} 事件。null 表示关闭。
+     */
+    public void setHookEmitter(Object hookExecutor) {
+        this.hookEmitter = hookExecutor;
+    }
+
+    /**
+     * 【新增】尽力而为地发射一次 SUBAGENT_STOP。反射调用，任何异常只记 debug。
+     */
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    private void fireSubagentStop(String agentId, AgentTask task, AgentResult result) {
+        Object emitter = this.hookEmitter;
+        if (emitter == null) return;
+        try {
+            Class<?> hookEventCls = Class.forName("io.leavesfly.jharness.agent.hooks.HookEvent");
+            Object eventEnum = Enum.valueOf((Class<Enum>) hookEventCls, "SUBAGENT_STOP");
+            Map<String, Object> payload = new HashMap<>();
+            payload.put("agent_id", agentId);
+            payload.put("task_name", task == null ? null : task.getName());
+            payload.put("success", result != null && result.isSuccess());
+            if (result != null && result.getError() != null) {
+                payload.put("error", result.getError());
+            }
+            java.lang.reflect.Method execute = emitter.getClass().getMethod(
+                    "execute", hookEventCls, Map.class);
+            execute.invoke(emitter, eventEnum, payload);
+        } catch (Throwable t) {
+            logger.debug("发射 SUBAGENT_STOP Hook 失败（忽略）: {}", t.getMessage());
+        }
     }
     
     /**
@@ -209,6 +248,8 @@ public class AgentOrchestrator {
                 );
                 
                 activeAgents.put(agentId, new AgentInstance(agentId, task.getName(), "completed"));
+                // 【Hook】SUBAGENT_STOP：子代理正常结束
+                fireSubagentStop(agentId, task, result);
                 return result;
                 
             } catch (Exception e) {
@@ -222,6 +263,8 @@ public class AgentOrchestrator {
                 );
                 
                 activeAgents.put(agentId, new AgentInstance(agentId, task.getName(), "failed"));
+                // 【Hook】SUBAGENT_STOP：子代理异常结束
+                fireSubagentStop(agentId, task, result);
                 return result;
             }
         }, executorService);

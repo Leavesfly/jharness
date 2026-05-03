@@ -6,6 +6,8 @@ import io.leavesfly.jharness.extension.skills.SkillDefinition;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Consumer;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * 【P0-1】由 plugin 的 {@code commands/*.md} 注册而成的 slash command。
@@ -16,11 +18,22 @@ import java.util.function.Consumer;
  * <h3>占位符规则（尽量与 Claude Code 规范保持一致）</h3>
  * <ul>
  *   <li>{@code $ARGUMENTS} 或 {@code {{args}}} → 整串 args（空格拼接）</li>
- *   <li>{@code $1} / {@code $2} / ... → 按位置取 args 中的第 i 个</li>
+ *   <li>{@code $1} / {@code $2} / ... → 按位置取 args 中的第 i 个（支持 $1..$99，越界替换为空串）</li>
  * </ul>
  * 未提供对应 arg 的占位符会被替换为空串。
  */
 public class PluginSlashCommand implements SlashCommand {
+
+    /**
+     * 数字占位符匹配：{@code $<n>}，n 可为任意长度。
+     * 使用一次性正则替换，避免"{@code $1} 先于 {@code $10} 被替换"导致的字符串腐蚀。
+     * 例如模板 {@code "$10"} + args={@code ["a"]}：
+     * <ul>
+     *   <li>错误实现：{@code $1} 先被替换成 {@code "a"}，结果变 {@code "a0"}；</li>
+     *   <li>本实现：正则一次性按整数 10 处理，args 未提供第 10 个时替换为空串。</li>
+     * </ul>
+     */
+    private static final Pattern NUMERIC_PLACEHOLDER = Pattern.compile("\\$(\\d+)");
 
     private final String name;
     private final String description;
@@ -91,25 +104,41 @@ public class PluginSlashCommand implements SlashCommand {
     }
 
     /**
-     * 渲染 prompt 模板，支持 $ARGUMENTS / {{args}} / $1..$9 占位。
+     * 渲染 prompt 模板，支持 {@code $ARGUMENTS} / {@code {{args}}} / {@code $<n>} 占位。
      *
      * <p>暴露为 public 以便单元测试直接校验渲染行为（也方便上层工具链做 dry-run）。
+     *
+     * <p><b>【修复】</b>{@code $1..$9} 的旧实现使用循环 {@code out.replace("$i", ...)}，
+     * 会被 {@code $10/$11/...} 碰撞（{@code $10} 被先替换成 {@code "<arg1>0"}）。
+     * 新实现用一次性正则 {@link #NUMERIC_PLACEHOLDER} 按整数解析位置，消除碰撞。
      */
     public static String renderTemplate(String template, List<String> args) {
         if (template == null) return "";
         String joined = (args == null || args.isEmpty()) ? "" : String.join(" ", args);
 
+        // 先替换具名占位符（这两个不会与数字占位符冲突）
         String out = template
                 .replace("$ARGUMENTS", joined)
                 .replace("{{args}}", joined);
 
-        // $1..$9 按位置替换；越界替换为空串
-        for (int i = 1; i <= 9; i++) {
-            String placeholder = "$" + i;
-            if (!out.contains(placeholder)) continue;
-            String val = (args != null && args.size() >= i) ? args.get(i - 1) : "";
-            out = out.replace(placeholder, val);
+        // 再用正则一次性替换所有 $<n> 占位符，避免 $1 先于 $10 被替换
+        Matcher m = NUMERIC_PLACEHOLDER.matcher(out);
+        StringBuilder sb = new StringBuilder(out.length());
+        while (m.find()) {
+            int idx;
+            try {
+                idx = Integer.parseInt(m.group(1));
+            } catch (NumberFormatException nfe) {
+                // 数字过大无法解析：替换为空串，保持与"越界"行为一致
+                idx = Integer.MAX_VALUE;
+            }
+            String val = (args != null && idx >= 1 && idx <= args.size())
+                    ? args.get(idx - 1)
+                    : "";
+            // appendReplacement 会把 val 中的 $ 当作反向引用，必须先 quote
+            m.appendReplacement(sb, Matcher.quoteReplacement(val));
         }
-        return out;
+        m.appendTail(sb);
+        return sb.toString();
     }
 }

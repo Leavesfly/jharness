@@ -35,6 +35,11 @@ public class SessionStorage {
      * 【B-15】锁表改为 static：所有 SessionStorage 实例共享同一把 per-sessionId 锁，
      * 避免 SessionCommandHandler 与自动保存钩子各自 new SessionStorage(同目录) 时
      * 出现并发写覆盖的问题。key 使用 "绝对路径#sessionId" 保证跨目录会话 id 重名也安全。
+     *
+     * <p><b>【修复】</b>锁对象采用 <b>常驻</b> 策略（不做 remove）。原实现在 synchronized 块的
+     * finally 里 remove 锁，会导致：线程 A 持锁期间 remove 后，线程 B 再次 computeIfAbsent
+     * 拿到<strong>新的</strong>锁对象，与 A 互斥失效、并发写入覆盖。考虑到同一进程中
+     * 活跃会话 ID 数量极其有限（通常个位数），常驻锁表的内存占用可忽略。
      */
     private static final Map<String, Object> SAVE_LOCKS = new ConcurrentHashMap<>();
 
@@ -75,12 +80,15 @@ public class SessionStorage {
     /**
      * 保存会话快照
      *
-     * 使用 per-session 锁保证同一会话的并发写入安全。
-     * 锁对象在写入完成后立即移除，防止 saveLocks 无限增长导致内存泄漏。
+     * <p>使用 per-session 锁（跨实例共享的静态锁表）保证同一会话的并发写入安全。
+     *
+     * <p><b>【修复】</b>不再在 finally 中 remove 锁对象。旧实现会引起"A 持锁 → finally remove →
+     * B 拿到新锁对象 → 互斥失效"的经典竞态，在自动保存 + 手动 /session save 并发时出现写覆盖。
+     * 锁对象常驻，内存占用可忽略（会话 ID 数量级在个位数）。
      */
     public void saveSession(SessionSnapshot snapshot) {
         String sessionId = snapshot.getSessionId();
-        // 【B-15】使用跨实例共享的静态锁表，避免多个 SessionStorage 实例对同一会话并发写覆盖
+        // 使用跨实例共享的静态锁表，避免多个 SessionStorage 实例对同一会话并发写覆盖
         String key = lockKey(sessionId);
         Object lock = SAVE_LOCKS.computeIfAbsent(key, k -> new Object());
         synchronized (lock) {
@@ -93,10 +101,8 @@ public class SessionStorage {
                 logger.debug("会话已保存: {}", sessionId);
             } catch (IOException e) {
                 logger.error("保存会话失败", e);
-            } finally {
-                // 写入完成后移除锁对象，防止锁表无限增长
-                SAVE_LOCKS.remove(key, lock);
             }
+            // 注意：不要 SAVE_LOCKS.remove(key, lock)，否则会破坏跨线程的互斥语义。
         }
     }
 

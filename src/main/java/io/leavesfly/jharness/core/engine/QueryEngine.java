@@ -68,6 +68,19 @@ public class QueryEngine implements AutoCloseable {
             sessionPersister;
 
     /**
+     * 【新增】可选的 Hook 发射器。注入后：
+     * <ul>
+     *   <li>{@link #submitMessage} 入口会发 {@code USER_PROMPT_SUBMIT}；</li>
+     *   <li>{@link #submitMessage} 返回前会发 {@code STOP}。</li>
+     * </ul>
+     * 用 Object 弱类型持有，避免 {@code core.engine} 包强依赖 {@code agent.hooks} 包。
+     * 实际使用反射调用 {@code execute(HookEvent, Map)} 以尽量不阻断主流程。
+     */
+    private volatile Object hookEmitter;
+    /** 由上层注入的会话 ID，用于写入 Hook payload 中的 "session_id" 字段。 */
+    private volatile String sessionIdForHook;
+
+    /**
      * 构造函数（兼容旧签名）。
      */
     public QueryEngine(OpenAiApiClient apiClient, ToolRegistry toolRegistry,
@@ -167,6 +180,43 @@ public class QueryEngine implements AutoCloseable {
     }
 
     /**
+     * 【新增】注入可选的 Hook 发射器 + 会话 ID。
+     *
+     * @param hookExecutor {@code io.leavesfly.jharness.agent.hooks.HookExecutor} 实例；null 表示关闭 Hook
+     * @param sessionId    会话 ID，写入 payload "session_id"
+     */
+    public void setHookEmitter(Object hookExecutor, String sessionId) {
+        this.hookEmitter = hookExecutor;
+        this.sessionIdForHook = sessionId;
+    }
+
+    /**
+     * 【新增】尽力而为地发射一次 Hook 事件。通过反射调用 HookExecutor.execute，
+     * 任何异常都只记 debug，绝不影响主流程。
+     *
+     * @param eventName 对应 {@code HookEvent} 枚举名
+     * @param payload   额外字段
+     */
+    private void fireHook(String eventName, java.util.Map<String, Object> payload) {
+        Object emitter = this.hookEmitter;
+        if (emitter == null) return;
+        try {
+            Class<?> hookEventCls = Class.forName("io.leavesfly.jharness.agent.hooks.HookEvent");
+            Object eventEnum = Enum.valueOf((Class<Enum>) hookEventCls, eventName);
+            java.util.Map<String, Object> fullPayload = new java.util.HashMap<>();
+            if (sessionIdForHook != null) fullPayload.put("session_id", sessionIdForHook);
+            if (cwd != null) fullPayload.put("cwd", cwd.toString());
+            if (payload != null) fullPayload.putAll(payload);
+            java.lang.reflect.Method execute = emitter.getClass().getMethod(
+                    "execute", hookEventCls, java.util.Map.class);
+            // 不 join，让 Hook 异步执行，避免拖慢主请求
+            execute.invoke(emitter, eventEnum, fullPayload);
+        } catch (Throwable t) {
+            logger.debug("发射 Hook {} 失败（忽略）: {}", eventName, t.getMessage());
+        }
+    }
+
+    /**
      * 【新增】向 sessionPersister 推送当前消息快照，异常被吞掉并记录日志，
      * 保证持久化失败不会影响主循环。
      */
@@ -222,10 +272,19 @@ public class QueryEngine implements AutoCloseable {
     public CompletableFuture<Void> submitMessage(String prompt, Consumer<StreamEvent> eventConsumer) {
         // F-P0-3：新的提交开始时复位取消标志，避免上次的 cancel 影响新查询
         cancelled.set(false);
+        // 【Hook】USER_PROMPT_SUBMIT：在消息入队前触发，payload 含 prompt 供审计/重写
+        fireHook("USER_PROMPT_SUBMIT", java.util.Map.of("prompt", prompt == null ? "" : prompt));
         synchronized (messageLock) {
             messages.add(ConversationMessage.userText(prompt));
         }
-        return runQuery(eventConsumer);
+        return runQuery(eventConsumer)
+                .whenComplete((v, err) -> {
+                    // 【Hook】STOP：无论正常 / 异常 / 取消，都发射一次 STOP
+                    java.util.Map<String, Object> p = new java.util.HashMap<>();
+                    p.put("cancelled", cancelled.get());
+                    p.put("error", err == null ? null : String.valueOf(err.getMessage()));
+                    fireHook("STOP", p);
+                });
     }
 
     /**
