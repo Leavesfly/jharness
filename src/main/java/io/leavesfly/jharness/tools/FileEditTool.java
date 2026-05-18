@@ -87,7 +87,7 @@ public class FileEditTool extends BaseTool<FileEditToolInput> {
                 // 原子写：写入临时文件后 ATOMIC_MOVE 替换，避免写入过程中崩溃留下半成品
                 atomicWrite(filePath, newContent);
 
-                // F-P0-4：写入编辑历史，供 undo_edit 使用
+                // 写入编辑历史，供 undo_edit 使用
                 long editId = EditHistoryManager.getInstance().record(
                         filePath.toString(), content, newContent, getName());
 

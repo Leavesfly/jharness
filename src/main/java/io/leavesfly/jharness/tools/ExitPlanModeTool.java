@@ -40,7 +40,7 @@ public class ExitPlanModeTool extends BaseTool<ExitPlanModeToolInput> {
     public CompletableFuture<ToolResult> execute(ExitPlanModeToolInput input, ToolExecutionContext context) {
         return CompletableFuture.supplyAsync(() -> {
             try {
-                // F-P1-2：退出时检查是否有未执行的计划
+                // 退出时检查是否有未执行的计划
                 io.leavesfly.jharness.core.plan.ExecutionPlan plan = EnterPlanModeTool.getActivePlan();
                 String planSummary = "";
                 if (plan != null && plan.hasPendingWork()) {
@@ -48,7 +48,7 @@ public class ExitPlanModeTool extends BaseTool<ExitPlanModeToolInput> {
                 }
                 EnterPlanModeTool.clearPlan();
                 settings.setPermissionMode("default");
-                // FP-2：同步运行时 PermissionChecker，避免 Settings 与真实鉴权状态漂移。
+                // 同步运行时 PermissionChecker，避免 Settings 与真实鉴权状态漂移。
                 PermissionChecker checker = context != null ? context.getPermissionChecker() : null;
                 if (checker != null) {
                     checker.setMode(PermissionMode.DEFAULT);

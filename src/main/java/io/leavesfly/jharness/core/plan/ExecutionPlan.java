@@ -6,7 +6,7 @@ import java.util.Collections;
 import java.util.List;
 
 /**
- * 执行计划（F-P1-2）。
+ * 执行计划。
  *
  * 在 Plan Mode 下，LLM 输出的所有工具调用会被拦截并转化为 PlanStep 列表存入此对象；
  * 用户可以通过 /plan 查看、/approve 确认、/approve_all 全部确认后才真正执行。

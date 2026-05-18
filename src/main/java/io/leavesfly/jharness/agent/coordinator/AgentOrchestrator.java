@@ -30,7 +30,7 @@ public class AgentOrchestrator {
     private QueryEngineFactory queryEngineFactory;
 
     /**
-     * 【新增】可选的 Hook 发射器。注入后，{@link #executeSingle} 结束时会发 {@code SUBAGENT_STOP}。
+     * 可选的 Hook 发射器。注入后，{@link #executeSingle} 结束时会发 {@code SUBAGENT_STOP}。
      * 弱类型持有，避免 agent.coordinator 强依赖 agent.hooks，发射时按反射调用。
      */
     private volatile Object hookEmitter;
@@ -73,7 +73,7 @@ public class AgentOrchestrator {
     }
 
     /**
-     * 【新增】注入 Hook 发射器（{@code io.leavesfly.jharness.agent.hooks.HookExecutor}），
+     * 注入 Hook 发射器（{@code io.leavesfly.jharness.agent.hooks.HookExecutor}），
      * 用于在子代理执行结束后发射 {@code SUBAGENT_STOP} 事件。null 表示关闭。
      */
     public void setHookEmitter(Object hookExecutor) {
@@ -81,7 +81,7 @@ public class AgentOrchestrator {
     }
 
     /**
-     * 【新增】尽力而为地发射一次 SUBAGENT_STOP。反射调用，任何异常只记 debug。
+     * 尽力而为地发射一次 SUBAGENT_STOP。反射调用，任何异常只记 debug。
      */
     @SuppressWarnings({"unchecked", "rawtypes"})
     private void fireSubagentStop(String agentId, AgentTask task, AgentResult result) {
@@ -119,15 +119,12 @@ public class AgentOrchestrator {
             futures.add(executeSingle(task, eventConsumer));
         }
 
-        // 【B-1】修复：
-        //  1. 原实现用 allOf.orTimeout().thenApply().exceptionally() 的链式结构，在超时情况下
-        //     thenApply 里 join() 未完成的 future 会抛 CancellationException，再被 exceptionally 捕获，
-        //     逻辑正确但路径冗长；这里改为对每个子 future 单独 applyToEither(timeout)，保证：
-        //       - 整体 30min 超时后仍返回 List<AgentResult>（而不是把 Void 误转为 List）；
-        //       - 任何单个子 future 失败 / 超时不会污染其它子任务的结果；
-        //       - 返回类型 List<AgentResult> 明确，避免泛型擦除导致的 ClassCastException。
-        //  2. 在 thenApply 中调用 join 是必要的，但 thenApply 运行在调用 allOf.complete 的线程上，
-        //     与 executorService 不共享队列，不会死锁。
+        // 超时与异常隔离策略：
+        //  - 整体 30min 超时后仍返回 List<AgentResult>（而非把 Void 误转为 List）；
+        //  - 任何单个子 future 失败 / 超时不会污染其它子任务的结果；
+        //  - 返回类型 List<AgentResult> 明确，避免泛型擦除导致的 ClassCastException。
+        // 在 handle 中调用 getNow 不会死锁：handle 运行在 allOf.complete 的线程，
+        // 与 executorService 不共享队列。
         java.util.concurrent.atomic.AtomicBoolean timedOut = new java.util.concurrent.atomic.AtomicBoolean(false);
         CompletableFuture<Void> all = CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]));
         return all.orTimeout(30, TimeUnit.MINUTES)
@@ -248,7 +245,7 @@ public class AgentOrchestrator {
                 );
                 
                 activeAgents.put(agentId, new AgentInstance(agentId, task.getName(), "completed"));
-                // 【Hook】SUBAGENT_STOP：子代理正常结束
+                // SUBAGENT_STOP：子代理正常结束
                 fireSubagentStop(agentId, task, result);
                 return result;
                 
@@ -263,7 +260,7 @@ public class AgentOrchestrator {
                 );
                 
                 activeAgents.put(agentId, new AgentInstance(agentId, task.getName(), "failed"));
-                // 【Hook】SUBAGENT_STOP：子代理异常结束
+                // SUBAGENT_STOP：子代理异常结束
                 fireSubagentStop(agentId, task, result);
                 return result;
             }

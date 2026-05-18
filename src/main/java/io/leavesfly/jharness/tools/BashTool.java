@@ -99,7 +99,7 @@ public class BashTool extends BaseTool<BashToolInput> {
 
                 logger.debug("执行命令: {} (session={})", command, input.getSession_id());
 
-                // F-P1-5：若指定了 session_id，则走持久会话路径
+                // 若指定了 session_id，则走持久会话路径
                 if (input.getSession_id() != null && !input.getSession_id().isBlank()) {
                     return runInSession(input, context);
                 }
@@ -180,7 +180,7 @@ public class BashTool extends BaseTool<BashToolInput> {
     }
 
     /**
-     * 持久会话模式（F-P1-5）：复用同一个长驻 bash 进程。
+     * 持久会话模式：复用同一个长驻 bash 进程。
      */
     private ToolResult runInSession(BashToolInput input, ToolExecutionContext context) throws IOException {
         ShellSession session = ShellSessionManager.getInstance()
@@ -219,9 +219,9 @@ public class BashTool extends BaseTool<BashToolInput> {
         String command = input.getCommand();
         String trimmedCmd = command.trim().toLowerCase();
 
-        // FP-5：命令中出现命令分隔 / 管道 / 命令替换 / 后台执行 / 进程替换等复合结构时，
+        // 命令出现分隔 / 管道 / 命令替换 / 后台执行 / 进程替换等复合结构时，
         // 无法仅凭前缀判断只读性（`ls; rm -rf /` 同样以 ls 开头但显然是写操作）。
-        // 保守起见，一旦命中以下任一特征，直接视为非只读，交给 PermissionChecker 走确认流程。
+        // 一旦命中以下任一特征，直接视为非只读，交给 PermissionChecker 走确认流程。
         if (containsComplexStructure(command)) {
             return false;
         }
@@ -247,7 +247,7 @@ public class BashTool extends BaseTool<BashToolInput> {
     }
 
     /**
-     * FP-5：检测命令中是否包含可能"串联写操作"的复合结构：
+     * 检测命令中是否包含可能"串联写操作"的复合结构：
      *   - 命令分隔符： ;
      *   - 逻辑连接：   && 、 ||
      *   - 管道：       |

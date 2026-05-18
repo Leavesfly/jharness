@@ -18,7 +18,7 @@ import java.nio.file.Path;
 import java.util.concurrent.CompletableFuture;
 
 /**
- * Agent 工具（F-P1-1 升级）。
+ * Agent 工具。
  *
  * 支持两种模式：
  * - {@code in_process}（默认）：在当前 JVM 内创建子 QueryEngine 实例执行 prompt，
@@ -89,7 +89,7 @@ public class AgentTool extends BaseTool<AgentToolInput> {
     }
 
     /**
-     * 进程内模式（F-P1-1）：创建子 QueryEngine 实例同步执行 prompt 并收集结果。
+     * 进程内模式：创建子 QueryEngine 实例同步执行 prompt 并收集结果。
      */
     private ToolResult runInProcess(AgentToolInput input, Path cwd) {
         if (sharedProvider == null || sharedToolRegistry == null) {

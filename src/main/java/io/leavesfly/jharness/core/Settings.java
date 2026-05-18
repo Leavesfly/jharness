@@ -57,37 +57,37 @@ public class Settings {
     private List<String> allowedTools = new ArrayList<>();
     private List<String> deniedTools = new ArrayList<>();
     /**
-     * FP-1：路径规则列表。每条规则的结构：
+     * 路径规则列表。每条规则的结构：
      *   { "pattern": "src/**", "allow": true }
      *   { "pattern": "/etc/**", "allow": false }
-     * 运行时被 JHarnessApplication.buildQueryEngine 装配到 PermissionChecker.addPathRule。
+     * 运行时由 JHarnessApplication.buildQueryEngine 装配到 PermissionChecker.addPathRule。
      */
     private List<Map<String, Object>> pathRules = new ArrayList<>();
     /**
-     * FP-1：命令黑名单模式列表（glob 风格，如 "rm -rf *"、"sudo *"）。
-     * 被 JHarnessApplication 装配到 PermissionChecker.addDeniedCommand。
+     * 命令黑名单模式列表（glob 风格，如 "rm -rf *"、"sudo *"）。
+     * 由 JHarnessApplication 装配到 PermissionChecker.addDeniedCommand。
      */
     private List<String> deniedCommandPatterns = new ArrayList<>();
     private String provider = DEFAULT_PROVIDER;
 
     /**
-     * 【新增】每日预算上限（USD），&lt;=0 表示不限制。命中后 CostTracker 会抛出 BudgetExceededException。
+     * 每日预算上限（USD），&lt;=0 表示不限制。命中后 CostTracker 会抛出 BudgetExceededException。
      */
     private java.math.BigDecimal dailyBudgetUsd = java.math.BigDecimal.ZERO;
 
-    /** 【新增】OpenAI 兼容端点连接超时（秒），默认 30。 */
+    /** OpenAI 兼容端点连接超时（秒），默认 30。 */
     private int connectTimeoutSeconds = 30;
-    /** 【新增】OpenAI 兼容端点读取超时（秒），默认 300。 */
+    /** OpenAI 兼容端点读取超时（秒），默认 300。 */
     private int readTimeoutSeconds = 300;
-    /** 【新增】OpenAI 兼容端点写入超时（秒），默认 30。 */
+    /** OpenAI 兼容端点写入超时（秒），默认 30。 */
     private int writeTimeoutSeconds = 30;
 
-    /** 【新增】消息压缩的 token 预算，&lt;=0 表示使用 MessageCompactionService 的默认值 32000。 */
+    /** 消息压缩的 token 预算，&lt;=0 表示使用 MessageCompactionService 的默认值 32000。 */
     private int messageCompactionTokenBudget = 0;
-    /** 【新增】消息压缩的条数阈值，&lt;=0 表示使用 MessageCompactionService 的默认值 20。 */
+    /** 消息压缩的条数阈值，&lt;=0 表示使用 MessageCompactionService 的默认值 20。 */
     private int messageCompactionMaxMessages = 0;
 
-    /** 【新增】会话自动保存目录（相对于 ~/.jharness），默认 sessions。 */
+    /** 是否在每轮对话后自动保存会话快照。 */
     private boolean autoSaveSessions = true;
 
     private static final Logger logger = LoggerFactory.getLogger(Settings.class);
@@ -311,12 +311,12 @@ public class Settings {
     public void setAllowedTools(List<String> allowedTools) { this.allowedTools = allowedTools; }
     public List<String> getDeniedTools() { return deniedTools; }
     public void setDeniedTools(List<String> deniedTools) { this.deniedTools = deniedTools; }
-    /** FP-1：路径规则列表（装配到 PermissionChecker.addPathRule）。 */
+    /** 路径规则列表（装配到 PermissionChecker.addPathRule）。 */
     public List<Map<String, Object>> getPathRules() { return pathRules; }
     public void setPathRules(List<Map<String, Object>> pathRules) {
         this.pathRules = pathRules != null ? pathRules : new ArrayList<>();
     }
-    /** FP-1：命令黑名单（装配到 PermissionChecker.addDeniedCommand）。 */
+    /** 命令黑名单（装配到 PermissionChecker.addDeniedCommand）。 */
     public List<String> getDeniedCommandPatterns() { return deniedCommandPatterns; }
     public void setDeniedCommandPatterns(List<String> deniedCommandPatterns) {
         this.deniedCommandPatterns = deniedCommandPatterns != null ? deniedCommandPatterns : new ArrayList<>();
@@ -324,13 +324,13 @@ public class Settings {
     public String getProvider() { return provider; }
     public void setProvider(String provider) { this.provider = provider; }
 
-    /** 【新增】每日预算上限（USD）。 */
+    /** 每日预算上限（USD）。 */
     public java.math.BigDecimal getDailyBudgetUsd() { return dailyBudgetUsd; }
     public void setDailyBudgetUsd(java.math.BigDecimal dailyBudgetUsd) {
         this.dailyBudgetUsd = dailyBudgetUsd != null ? dailyBudgetUsd : java.math.BigDecimal.ZERO;
     }
 
-    /** 【新增】OpenAI 超时参数。 */
+    /** OpenAI 超时参数。 */
     public int getConnectTimeoutSeconds() { return connectTimeoutSeconds; }
     public void setConnectTimeoutSeconds(int v) { this.connectTimeoutSeconds = v > 0 ? v : 30; }
     public int getReadTimeoutSeconds() { return readTimeoutSeconds; }
@@ -338,13 +338,13 @@ public class Settings {
     public int getWriteTimeoutSeconds() { return writeTimeoutSeconds; }
     public void setWriteTimeoutSeconds(int v) { this.writeTimeoutSeconds = v > 0 ? v : 30; }
 
-    /** 【新增】消息压缩参数。 */
+    /** 消息压缩参数。 */
     public int getMessageCompactionTokenBudget() { return messageCompactionTokenBudget; }
     public void setMessageCompactionTokenBudget(int v) { this.messageCompactionTokenBudget = v; }
     public int getMessageCompactionMaxMessages() { return messageCompactionMaxMessages; }
     public void setMessageCompactionMaxMessages(int v) { this.messageCompactionMaxMessages = v; }
 
-    /** 【新增】是否在每轮对话后自动保存会话快照。 */
+    /** 是否在每轮对话后自动保存会话快照。 */
     public boolean isAutoSaveSessions() { return autoSaveSessions; }
     public void setAutoSaveSessions(boolean v) { this.autoSaveSessions = v; }
 
@@ -408,7 +408,7 @@ public class Settings {
                 settings.deniedTools = MAPPER.convertValue(root.get("deniedTools"),
                         MAPPER.getTypeFactory().constructCollectionType(List.class, String.class));
             }
-            // FP-1：反序列化 pathRules / deniedCommandPatterns
+            // 反序列化 pathRules / deniedCommandPatterns
             if (root.hasNonNull("pathRules")) {
                 settings.pathRules = MAPPER.convertValue(root.get("pathRules"),
                         MAPPER.getTypeFactory().constructCollectionType(
@@ -447,7 +447,7 @@ public class Settings {
             if (root.has("fastMode") && root.get("fastMode").isBoolean()) {
                 settings.fastMode = root.get("fastMode").asBoolean();
             }
-            // 【新增】加载预算 / 超时 / 压缩相关字段
+            // 加载预算 / 超时 / 压缩相关字段
             if (root.hasNonNull("dailyBudgetUsd")) {
                 try {
                     settings.dailyBudgetUsd = new java.math.BigDecimal(

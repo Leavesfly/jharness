@@ -5,7 +5,7 @@ import java.util.HashMap;
 import java.util.Map;
 
 /**
- * 模型定价表（F-P0-5）。
+ * 模型定价表。
  *
  * 维护常见模型的 token 价格（单位：美元 / 1K tokens），用于本地成本估算。
  *

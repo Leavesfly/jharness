@@ -11,12 +11,9 @@ import java.util.concurrent.ConcurrentHashMap;
  *
  * 提供工具执行时需要的上下文信息，如工作目录、元数据、运行中的 PermissionChecker 等。
  *
- * 功能性权限修复（FP-2）：
- *   原设计中工具无法感知"当前运行时"的 PermissionChecker，导致 EnterPlanModeTool
- *   等模式切换工具只能改 Settings、无法同步给真正在工作的 PermissionChecker 实例。
- *   这里把 PermissionChecker 作为一等字段注入到执行上下文，允许工具在执行期
- *   读取/调整权限状态，但仍保持向后兼容：老的两参构造器仍可使用，此时
- *   permissionChecker 为 null，调用方需自行判空降级。
+ * PermissionChecker 作为一等字段注入到执行上下文，允许 EnterPlanModeTool 等模式切换工具
+ * 在执行期读取/调整运行时权限状态。保留两参构造器以向后兼容，此时 permissionChecker 为 null，
+ * 调用方需自行判空降级。
  */
 public class ToolExecutionContext {
     private final Path cwd;

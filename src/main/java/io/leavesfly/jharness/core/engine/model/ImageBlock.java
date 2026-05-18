@@ -4,7 +4,7 @@ import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 /**
- * 图片内容块（F-P1-3）。
+ * 图片内容块。
  *
  * 支持两种图片来源：
  * - base64：通过 {@code data} 字段传入 base64 编码的图片数据，{@code mediaType} 标注 MIME 类型；

@@ -42,7 +42,7 @@ public class BashToolInput {
     }
 
     /**
-     * 持久 shell 会话标识（F-P1-5）。
+     * 持久 shell 会话标识。
      *
      * 为空时每次命令都使用一次性 ProcessBuilder 进程（与旧行为兼容）；
      * 非空时会把命令发送到对应 {@code sessionId} 的长驻 bash 会话中，

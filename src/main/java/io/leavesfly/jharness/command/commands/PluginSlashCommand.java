@@ -10,7 +10,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * 【P0-1】由 plugin 的 {@code commands/*.md} 注册而成的 slash command。
+ * 由 plugin 的 {@code commands/*.md} 注册而成的 slash command。
  *
  * <p>对齐 Claude Code 的 plugin slash command 语义：把 Markdown 正文作为 prompt 模板，
  * 用户输入的 args 会按占位符注入后作为一次新的用户消息提交给 {@link io.leavesfly.jharness.core.engine.QueryEngine}。

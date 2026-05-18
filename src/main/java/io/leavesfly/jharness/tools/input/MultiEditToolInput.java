@@ -6,7 +6,7 @@ import jakarta.validation.constraints.NotEmpty;
 import java.util.List;
 
 /**
- * multi_edit 工具输入（F-P1-4）。
+ * multi_edit 工具输入。
  *
  * 对同一文件按给定顺序应用多个 edit，全部成功才写回磁盘；
  * 任一 edit 失败则整体回滚，不对目标文件产生任何副作用。

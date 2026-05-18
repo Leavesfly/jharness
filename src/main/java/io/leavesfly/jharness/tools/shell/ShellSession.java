@@ -17,7 +17,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.ReentrantLock;
 
 /**
- * 持久化的 Shell 会话（F-P1-5）。
+ * 持久化的 Shell 会话。
  *
  * 通过启动一个长驻的 {@code bash} 进程，让同一 session 内的多条命令共享环境变量、
  * 工作目录、shell 别名/函数等上下文，避免每次命令都重开进程导致状态丢失。

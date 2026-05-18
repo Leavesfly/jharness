@@ -1,7 +1,7 @@
 package io.leavesfly.jharness.core.plan;
 
 /**
- * 执行计划中的单个步骤（F-P1-2）。
+ * 执行计划中的单个步骤。
  *
  * Plan Mode 下，LLM 不直接修改文件，而是输出结构化的执行计划；
  * 每个 PlanStep 描述一个原子操作（如编辑文件、执行命令、创建文件等），

@@ -129,7 +129,7 @@ public class JHarnessApplication implements Callable<Integer> {
         logger.info("权限模式: {}", permissionMode);
         logger.info("最大轮次: {}", maxTurns);
 
-        // 【开箱即用】首次启动时从 classpath 释放默认配置与默认插件到 ~/.jharness，
+        // 首次启动时从 classpath 释放默认配置与默认插件到 ~/.jharness，
         // 保证无任何手动配置也能跑起来。幂等：已存在则跳过。
         SettingsBootstrap.seedIfAbsent();
 
@@ -139,9 +139,8 @@ public class JHarnessApplication implements Callable<Integer> {
 
         logger.info("模型: {}", settings.getModel());
 
-        // P-07 修复：项目已经迁到 OpenAI 兼容协议，API Key 的优先环境变量应是 OPENAI_API_KEY，
-        // 同时保留 ANTHROPIC_API_KEY 兼容项
-        // 【开箱即用】如果 baseUrl 指向本地端点（Ollama 等），允许 API Key 为空，由 OpenAiApiClient
+        // API Key 优先 OPENAI_API_KEY，兼容 ANTHROPIC_API_KEY。
+        // 若 baseUrl 指向本地端点（Ollama 等），允许 API Key 为空，由 OpenAiApiClient
         // 自动用占位符启动；仅当 baseUrl 指向远程端点且未配置 Key 时才报错退出。
         if (settings.getApiKey() == null || settings.getApiKey().isBlank()) {
             if (OpenAiApiClient.isLocalEndpoint(settings.getBaseUrl())) {
@@ -234,21 +233,19 @@ public class JHarnessApplication implements Callable<Integer> {
     /**
      * 构建 QueryEngine 实例（组装完整依赖链）。
      *
-     * 本次改造（P-03/P-04/P-08）：
      * <ul>
-     *   <li>P-03：从 {@code settings.getMcpServers()} + 已加载插件的 {@code mcpServers} 中收集 MCP 服务器
-     *       配置，注入到 {@link McpClientManager} 并 {@code connectAll()} 异步启动；动态 MCP 工具在连上后
-     *       由 {@link ToolRegistry} 的 MCP 适配器自动发现（改造后顺序：先连 MCP 再注册工具）；</li>
-     *   <li>P-04：调用 {@link PluginLoader#loadPlugins} 加载用户级 + 项目级插件，把插件里的 skills / hooks /
-     *       mcpServers 合并到对应注册表，真正让插件/Hook 系统生效；</li>
-     *   <li>P-08：读取项目根下的 {@code CLAUDE.md}（若存在）并拼接到系统提示词，满足 wiki 宣传的
-     *       "项目上下文文件"能力。</li>
+     *   <li>从 {@code settings.getMcpServers()} + 已加载插件的 {@code mcpServers} 中收集 MCP 服务器
+     *       配置，注入到 {@link McpClientManager} 并 {@code connectAll()} 异步启动；
+     *       动态 MCP 工具在连上后由 {@link ToolRegistry} 的 MCP 适配器自动发现；</li>
+     *   <li>调用 {@link PluginLoader#loadPlugins} 加载用户级 + 项目级插件，把插件里的
+     *       skills / hooks / mcpServers 合并到对应注册表；</li>
+     *   <li>读取项目根下的 {@code CLAUDE.md}（若存在）并拼接到系统提示词，提供项目上下文。</li>
      * </ul>
      */
     private QueryEngine buildQueryEngine(Settings settings) {
         Path cwd = Paths.get(System.getProperty("user.dir"));
 
-        // 【改造】使用 Settings 中新增的超时字段，避免连接慢/读取慢的环境下被 300s 硬编码坑到
+        // 使用 Settings 中的超时字段，避免连接慢/读取慢的环境下被 300s 硬编码坑到
         OpenAiApiClient apiClient = new OpenAiApiClient(
                 settings.getBaseUrl(),
                 settings.getApiKey(),
@@ -280,8 +277,8 @@ public class JHarnessApplication implements Callable<Integer> {
         for (String tool : settings.getDeniedTools()) {
             permissionChecker.addDeniedTool(tool);
         }
-        // FP-1：把配置文件里的 pathRules / deniedCommandPatterns 装配到 PermissionChecker，
-        // 否则路径规则 / 命令黑名单功能虽然实现了但从来不会被触发。
+        // 把配置文件里的 pathRules / deniedCommandPatterns 装配到 PermissionChecker，
+        // 使路径规则 / 命令黑名单真正生效。
         for (var rule : settings.getPathRules()) {
             try {
                 Object pattern = rule.get("pattern");
@@ -302,27 +299,27 @@ public class JHarnessApplication implements Callable<Integer> {
             }
         }
 
-        // FP-3：把 PermissionChecker 注入到后台入口，使 BackgroundTaskManager / McpClientManager
+        // 把 PermissionChecker 注入到后台入口，使 BackgroundTaskManager / McpClientManager
         // 与前台 bash 工具共享同一套安全栅栏，避免黑名单/规则通过后台通道被绕过。
         taskManager.setPermissionChecker(permissionChecker);
         mcpManager.setPermissionChecker(permissionChecker);
 
-        // P-04：加载用户级 + 项目级插件，让 Skill / Hook / MCP 扩展系统真正生效
+        // 加载用户级 + 项目级插件，让 Skill / Hook / MCP 扩展系统真正生效
         HookRegistry hookRegistry = new HookRegistry();
         List<LoadedPlugin> loadedPlugins = loadPluginsQuietly(settings, cwd, skillRegistry, hookRegistry);
 
-        // 【P0-wire-up】把 plugin 提供的 subagent 注册到 teamRegistry（每个 agent 一个同名 team，
+        // 把 plugin 提供的 subagent 注册到 teamRegistry（每个 agent 一个同名 team，
         // 供 AgentOrchestrator / /agents 命令使用）。
         registerPluginAgents(teamRegistry, loadedPlugins);
 
-        // P-03：把 Settings.mcpServers 和插件里的 mcpServers 合并注入到 McpClientManager；
+        // 把 Settings.mcpServers 和插件里的 mcpServers 合并注入到 McpClientManager；
         // 连接成功后再注册 ToolRegistry，保证动态 MCP 工具被一起注册进去。
         registerMcpServers(mcpManager, settings, loadedPlugins);
 
         ToolRegistry toolRegistry = ToolRegistry.withDefaults(
                 settings, taskManager, teamRegistry, skillRegistry, mcpManager, cronRegistry);
 
-        // P-08：若项目根有 CLAUDE.md，则把其内容拼接到系统提示词
+        // 若项目根有 CLAUDE.md，则把其内容拼接到系统提示词
         String basePrompt = "你是 JHarness，一个强大的 AI 编程助手。你可以使用工具来帮助用户完成各种任务。";
         String projectContext = loadProjectContext(cwd);
         if (!projectContext.isBlank()) {
@@ -335,12 +332,12 @@ public class JHarnessApplication implements Callable<Integer> {
         QueryEngine engine = new QueryEngine(apiClient, toolRegistry, permissionChecker,
                 cwd, systemPrompt, settings.getMaxTurns());
 
-        // F-P0-5：把当前模型名注入 CostTracker，让价格表查询生效
+        // 把当前模型名注入 CostTracker，让价格表查询生效
         engine.getCostTracker().setModelName(settings.getModel());
-        // 【新增】把 Settings 中的日预算注入 CostTracker，超限时 addUsage 会抛 BudgetExceededException
+        // 把 Settings 中的日预算注入 CostTracker，超限时 addUsage 会抛 BudgetExceededException
         engine.getCostTracker().setDailyBudgetUsd(settings.getDailyBudgetUsd());
 
-        // 【新增】根据 Settings 配置消息压缩参数，并把 systemPrompt 的 token 提前扣到预算里，
+        // 根据 Settings 配置消息压缩参数，并把 systemPrompt 的 token 提前扣到预算里，
         // 避免超长 CLAUDE.md 导致压缩触发太晚，把 API 上下文直接打爆。
         int userBudget = settings.getMessageCompactionTokenBudget();
         int userMaxMessages = settings.getMessageCompactionMaxMessages();
@@ -359,13 +356,13 @@ public class JHarnessApplication implements Callable<Integer> {
                             .withSystemPromptTokens(sysTokens));
         }
 
-        // 【新增】配置会话自动保存。对每一轮消息变更都做一次快照落盘，
+        // 配置会话自动保存。对每一轮消息变更都做一次快照落盘，
         // 防止会话进行中 JVM 异常退出导致历史丢失。
         if (settings.isAutoSaveSessions()) {
             configureAutoSaveSession(engine, settings, cwd);
         }
 
-        // 【新增】把后台资源（MCP / Cron / Task / Hook）的生命周期挂到 engine 上，
+        // 把后台资源（MCP / Cron / Task / Hook）的生命周期挂到 engine 上，
         // engine.close() 时会一起回收，避免单测或脚本调用时线程泄漏。
         final McpClientManager mcpForClose = mcpManager;
         final CronRegistry cronForClose = cronRegistry;
@@ -377,7 +374,7 @@ public class JHarnessApplication implements Callable<Integer> {
             try { taskForClose.shutdown(); } catch (Exception ex) { logger.warn("关闭 Task 失败", ex); }
         });
 
-        // 【新增】把 toolRegistry 暴露给下游（TUI 命令注册/自动保存/MCP 刷新），
+        // 把 toolRegistry 暴露给下游（TUI 命令注册/自动保存/MCP 刷新），
         // 同时在 MCP 连接完成后刷新一次动态工具。由于 connectAll 是异步的，
         // 首次 withDefaults 时可能工具列表还是空的，需要在连上后补注册。
         engine.registerCloseHook(() -> {/* 占位：toolRegistry 本身不持有线程资源 */});
@@ -396,17 +393,16 @@ public class JHarnessApplication implements Callable<Integer> {
             }
         });
 
-        // F-P1-1：为 AgentTool 注入共享资源，启用 in_process 模式
+        // 为 AgentTool 注入共享资源，启用 in_process 模式
         BaseTool<?> agentRaw = toolRegistry.get("agent_spawn");
         if (agentRaw instanceof AgentTool agentTool) {
             agentTool.configureInProcess(apiClient, toolRegistry, permissionChecker);
             logger.info("AgentTool in_process 模式已配置");
         }
 
-        // P-04：Hook 执行器共享安全栅栏，确保 Hook 里 fork 子进程也走同一套权限评估。
-        // 【Hook 发射点装配】只有在注册表非空时才构造 HookExecutor 并注入到 engine，避免无 Hook
-        // 场景下的反射开销。hookExecutor 生命周期绑定到 engine（close hook 里不需要显式释放，
-        // 因为它本身不持有后台线程 — 所有子进程/HTTP 请求都是临时的）。
+        // Hook 执行器共享安全栅栏，确保 Hook 里 fork 子进程也走同一套权限评估。
+        // 只有在注册表非空时才构造 HookExecutor 并注入到 engine，避免无 Hook 场景下的反射开销。
+        // hookExecutor 生命周期绑定到 engine（不持有后台线程，所有子进程/HTTP 请求都是临时的）。
         if (hookRegistry.size() > 0) {
             HookExecutor hookExecutor = new HookExecutor(hookRegistry, cwd);
             hookExecutor.setPermissionChecker(permissionChecker);
@@ -444,7 +440,7 @@ public class JHarnessApplication implements Callable<Integer> {
             });
         }
 
-        // 【P0-wire-up】把已加载插件列表挂到 engine 上，供 buildFullCommandRegistry 在 TUI / 交互模式
+        // 把已加载插件列表挂到 engine 上，供 buildFullCommandRegistry 在 TUI / 交互模式
         // 构造完整 CommandRegistry 时读取，用于注册 plugin slash commands（避免重复加载）。
         engine.setLoadedPlugins(loadedPlugins);
 
@@ -452,7 +448,7 @@ public class JHarnessApplication implements Callable<Integer> {
     }
 
     /**
-     * 【新增】为 {@link QueryEngine} 配置会话自动保存钩子：每当消息变更，把快照落到
+     * 为 {@link QueryEngine} 配置会话自动保存钩子：每当消息变更，把快照落到
      * {@code ~/.jharness/sessions/session-&lt;id&gt;.json}。失败仅记 debug，不影响主流程。
      *
      * <p>会话 ID 策略：本次进程生成一次随机 ID，同一进程内多轮交互共享；
@@ -699,12 +695,12 @@ public class JHarnessApplication implements Callable<Integer> {
      */
     private int runPrintMode(Settings settings) {
         try (QueryEngine queryEngine = buildQueryEngine(settings)) {
-            // P-01：-c / -r 在单次查询模式下同样生效，让会话能接着之前的上下文跑
+            // -c / -r 在单次查询模式下同样生效，让会话能接着之前的上下文跑
             tryRestoreSession(queryEngine);
             System.out.println("正在处理...\n");
             queryEngine.submitMessage(printPrompt, getEventConsumerForFormat()).join();
             System.out.println();
-            // P-01：支持 --output-format=json 在结尾输出结构化结果，便于 CI / 脚本消费
+            // 支持 --output-format=json 在结尾输出结构化结果，便于 CI / 脚本消费
             if ("json".equalsIgnoreCase(outputFormat)) {
                 emitFinalJson(queryEngine);
             }
@@ -802,14 +798,13 @@ public class JHarnessApplication implements Callable<Integer> {
      */
     private int runInteractiveMode(Settings settings) {
         try (QueryEngine queryEngine = buildQueryEngine(settings)) {
-            // P-01：交互式模式也支持 -c / -r，启动时自动恢复上次会话或指定会话
+            // 交互式模式也支持 -c / -r，启动时自动恢复上次会话或指定会话
             tryRestoreSession(queryEngine);
             if (enableTUI) {
                 logger.info("启动 Lanterna TUI 界面");
                 TerminalUI tui = new TerminalUI();
                 tui.setQueryEngine(queryEngine);
-                // 【B-10】TUI 之前只挂了基础 CommandRegistry()，导致 /mcp /session /cron /agents
-                // 等增强命令不可用；这里改用 createFullRegistry，让 TUI 与控制台拥有一致的命令面板。
+                // 使用完整的命令面板，让 TUI 与控制台拥有相同的 /mcp /session /cron /agents 等增强命令。
                 tui.setCommandRegistry(buildFullCommandRegistry(queryEngine, settings));
                 tui.setStatus(settings.getModel(), permissionMode, "就绪");
                 tui.start();
@@ -827,7 +822,7 @@ public class JHarnessApplication implements Callable<Integer> {
     }
 
     /**
-     * 【新增】尽力构建"完整命令注册表"，失败时降级为基础版。
+     * 尽力构建"完整命令注册表"，失败时降级为基础版。
      *
      * <p>由于 {@link CommandRegistry#createFullRegistry} 依赖 TeamRegistry/AgentOrchestrator 等
      * 对象，而这些对象目前在 {@link #buildQueryEngine(Settings)} 内部按需创建，这里复用 engine 已
@@ -852,7 +847,7 @@ public class JHarnessApplication implements Callable<Integer> {
                     cronForUi,
                     hookForUi);
 
-            // 【P0-wire-up】注册插件提供的 slash commands 和 subagent
+            // 注册插件提供的 slash commands 和 subagent
             List<LoadedPlugin> plugins = extractLoadedPlugins(engine);
             registerPluginCommands(registry, plugins);
             registerPluginAgents(teamRegistry, plugins);
@@ -865,7 +860,7 @@ public class JHarnessApplication implements Callable<Integer> {
     }
 
     /**
-     * 【P0-wire-up】从 engine 的 metadata 提取已加载插件列表（安全过滤 Object 类型）。
+     * 从 engine 的 metadata 提取已加载插件列表（安全过滤 Object 类型）。
      */
     @SuppressWarnings("unchecked")
     private static List<LoadedPlugin> extractLoadedPlugins(QueryEngine engine) {

@@ -41,7 +41,7 @@ public class BackgroundTaskManager implements AutoCloseable {
     private volatile boolean closed = false;
 
     /**
-     * FP-3：可选的 PermissionChecker。注入后，后台 shell / agent 任务在 fork 子进程前会先
+     * 可选的 PermissionChecker。注入后，后台 shell / agent 任务在 fork 子进程前会先
      * 走一遍权限评估；未注入时保持旧行为。通过 setter 注入避免破坏既有构造签名。
      */
     private volatile PermissionChecker permissionChecker;
@@ -68,7 +68,7 @@ public class BackgroundTaskManager implements AutoCloseable {
     }
 
     /**
-     * FP-3：注入 PermissionChecker，后续 shell / agent 任务在 fork 子进程前走权限评估。
+     * 注入 PermissionChecker，后续 shell / agent 任务在 fork 子进程前走权限评估。
      */
     public void setPermissionChecker(PermissionChecker permissionChecker) {
         this.permissionChecker = permissionChecker;
@@ -77,8 +77,8 @@ public class BackgroundTaskManager implements AutoCloseable {
     /**
      * 创建 Shell 任务
      *
-     * FP-3：若注入了 PermissionChecker，先对命令做一次权限评估；被 deny 的任务立即标记为
-     * FAILED，不会 fork 子进程。这样后台 shell 通道和前台 bash 工具使用同一套安全栅栏。
+     * 若注入了 PermissionChecker，先对命令做一次权限评估；被 deny 的任务立即标记为
+     * FAILED，不会 fork 子进程，确保后台 shell 与前台 bash 工具共用同一套安全栅栏。
      */
     public TaskRecord createShellTask(String command, String description, Path cwd) {
         String taskId = UUID.randomUUID().toString().substring(0, 8);
@@ -86,7 +86,7 @@ public class BackgroundTaskManager implements AutoCloseable {
         TaskRecord task = new TaskRecord(taskId, command, description, cwd, TaskStatus.RUNNING);
         tasks.put(taskId, task);
 
-        // FP-3：前置权限评估。注意任务名用 "bash"，与前台 BashTool 的 name 对齐，这样
+        // 前置权限评估。任务名用 "bash"，与前台 BashTool 的 name 对齐，这样
         // PermissionChecker 的工具黑/白名单、命令黑名单对前后台路径均一致生效。
         if (permissionChecker != null) {
             PermissionDecision decision = permissionChecker.evaluate("bash", false, null, command);
@@ -238,7 +238,7 @@ public class BackgroundTaskManager implements AutoCloseable {
         task.setModel(model);
         tasks.put(taskId, task);
 
-        // FP-3：agent_spawn 工具在黑名单中时，不允许通过后台入口绕过。
+        // agent_spawn 工具在黑名单中时，不允许通过后台入口绕过。
         // 命令参数填 null（agent 启动不是一条 shell 命令），仅走工具名校验。
         if (permissionChecker != null) {
             PermissionDecision decision = permissionChecker.evaluate("agent_spawn", false, null, null);

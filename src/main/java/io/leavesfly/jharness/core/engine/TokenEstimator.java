@@ -9,9 +9,9 @@ import io.leavesfly.jharness.core.engine.model.ToolUseBlock;
 import java.util.List;
 
 /**
- * Token 估算器（F-P0-2）。
+ * Token 估算器。
  *
- * 在没有引入 jtokkit/tiktoken-java 依赖的前提下，提供一个"**足够用**"的 token 估算实现：
+ * 在没有引入 jtokkit/tiktoken-java 依赖的前提下，提供一个"足够用"的 token 估算实现：
  * - 英文及 ASCII 字符按 1 token / 4 字符的经验比例（与 OpenAI 官方估算一致）；
  * - 中文及 CJK 字符按 1 token / 1.5 字符（约等于 tiktoken 对中文的实际切分密度）；
  * - 其他多字节字符（如韩文、日文假名、表情符号）按 1 token / 2 字符；

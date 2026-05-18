@@ -14,7 +14,7 @@ import java.util.List;
  * 当对话历史过长时，压缩早期消息以节省 Token。
  * 策略：保留最新 N 条消息，将早期消息压缩为摘要。
  *
- * F-P0-2 升级：支持基于 token 总量的触发（优先于条数阈值）。
+ * 支持基于 token 总量的触发（优先于条数阈值）：
  * - 若设置 maxTokenBudget（&gt;0），当估算总 token 超过该值时触发压缩；
  * - 条数阈值仍保留作为兜底，避免即使 token 少但消息太多也会带来响应延迟。
  */
@@ -38,14 +38,14 @@ public class MessageCompactionService {
     }
 
     public MessageCompactionService(int maxMessages, int summaryMessages, int maxTokenBudget) {
-        // 【新增】对非法配置做防御，避免上游传 0 / 负值后触发死循环
+        // 对非法配置做防御，避免上游传 0 / 负值后触发死循环
         this.maxMessages = maxMessages > 0 ? maxMessages : DEFAULT_MAX_MESSAGES;
         this.summaryMessages = summaryMessages > 0 ? summaryMessages : DEFAULT_SUMMARY_MESSAGES;
         this.maxTokenBudget = maxTokenBudget > 0 ? maxTokenBudget : DEFAULT_MAX_TOKEN_BUDGET;
     }
 
     /**
-     * 【新增】允许外部预先把 systemPrompt 的 token 从总预算里扣减，避免超长 CLAUDE.md 注入
+     * 允许外部预先把 systemPrompt 的 token 从总预算里扣减，避免超长 CLAUDE.md 注入
      * system prompt 导致压缩触发过晚。
      *
      * @param systemPromptTokens systemPrompt 估算出的 token 数
@@ -59,7 +59,7 @@ public class MessageCompactionService {
     /**
      * 压缩消息列表。
      *
-     * F-P0-2 升级：如果仅按条数压缩后 token 仍超预算，则继续迭代压缩，
+     * 如果仅按条数压缩后 token 仍超预算，则继续迭代压缩，
      * 每轮将"保留条数"减半直到满足预算或仅剩 2 条（保留摘要 + 最新一条用户消息）。
      *
      * @param messages 原始消息列表
@@ -152,7 +152,7 @@ public class MessageCompactionService {
     }
 
     /**
-     * 判断是否需要压缩（F-P0-2：条数 OR token 预算 任一超限即触发）。
+     * 判断是否需要压缩：条数 OR token 预算 任一超限即触发。
      */
     public boolean needsCompaction(List<ConversationMessage> messages) {
         if (messages == null || messages.isEmpty()) {

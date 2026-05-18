@@ -13,7 +13,7 @@ import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * 持久 Shell 会话管理器（F-P1-5）。
+ * 持久 Shell 会话管理器。
  *
  * 按 sessionId 维护一组长驻的 {@link ShellSession}，BashTool 会查询此管理器来决定
  * 是在现有会话上执行命令还是新建一个会话。默认策略：

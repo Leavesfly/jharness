@@ -73,8 +73,8 @@ public class ConfigCommandHandler {
 
     public static SlashCommand createPermissionsCommand() {
         return cmd("permissions", "显示或设置权限模式", (args, ctx) -> {
-            // FP-2：/permissions set 必须同时更新运行时 PermissionChecker，否则 Settings 与
-            // 真正在工作的 PermissionChecker 状态漂移，模式切换无法生效。
+            // /permissions set 必须同时更新运行时 PermissionChecker，避免 Settings
+            // 与真正在工作的实例状态漂移。
             Settings s = ctx != null && ctx.getSettings() != null ? ctx.getSettings() : Settings.load();
             if (args.isEmpty() || "show".equals(args.get(0))) {
                 return CommandResult.success(
@@ -93,8 +93,8 @@ public class ConfigCommandHandler {
 
     public static SlashCommand createPlanCommand() {
         return cmd("plan", "切换计划模式", (args, ctx) -> {
-            // FP-2：/plan on/off/toggle 必须同步 PermissionChecker 的 mode，否则用户以为进入
-            // 计划模式但写操作依然会被执行。
+            // /plan on/off/toggle 必须同步 PermissionChecker 的 mode，
+            // 否则用户以为进入计划模式但写操作仍会被执行。
             Settings s = ctx != null && ctx.getSettings() != null ? ctx.getSettings() : Settings.load();
             String action = args.isEmpty() ? "toggle" : args.get(0);
             if ("on".equals(action) || "enter".equals(action)) {
@@ -119,7 +119,7 @@ public class ConfigCommandHandler {
     }
 
     /**
-     * FP-2：把 Settings 中的权限模式切换同步到运行时 PermissionChecker。
+     * 把 Settings 中的权限模式切换同步到运行时 PermissionChecker。
      * 若上下文里没有 PermissionChecker（比如单元测试场景），记录 debug 日志后降级。
      */
     private static void syncRuntimeMode(CommandContext ctx, PermissionMode mode) {

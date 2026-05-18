@@ -14,7 +14,7 @@ import java.nio.file.StandardCopyOption;
 import java.util.concurrent.CompletableFuture;
 
 /**
- * 撤销编辑工具（F-P0-4）。
+ * 撤销编辑工具。
  *
  * 撤销由 {@link FileEditTool} / {@link FileWriteTool} 写入 {@link EditHistoryManager} 的最近一次编辑：
  * - 若记录的 {@code originalContent == null}，表示该编辑是"新建文件"，撤销时删除该文件；

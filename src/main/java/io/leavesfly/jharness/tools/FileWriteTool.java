@@ -52,7 +52,7 @@ public class FileWriteTool extends BaseTool<FileWriteToolInput> {
                     Files.createDirectories(filePath.getParent());
                 }
 
-                // F-P0-4：读取原内容用于历史记录；不存在则记录为 null 表示新建
+                // 读取原内容用于历史记录；不存在则记录为 null 表示新建
                 String originalContent = Files.exists(filePath)
                         ? Files.readString(filePath, StandardCharsets.UTF_8)
                         : null;

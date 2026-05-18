@@ -11,7 +11,7 @@ import org.slf4j.LoggerFactory;
 import java.util.concurrent.CompletableFuture;
 
 /**
- * 进入计划模式工具（F-P1-2 升级）。
+ * 进入计划模式工具。
  *
  * 切换到 Plan Mode 后：
  * - PermissionMode 设为 "plan"，PermissionChecker 会拦截所有写操作；
@@ -54,8 +54,8 @@ public class EnterPlanModeTool extends BaseTool<EnterPlanModeToolInput> {
         return CompletableFuture.supplyAsync(() -> {
             try {
                 settings.setPermissionMode("plan");
-                // FP-2：模式切换必须同步到运行时 PermissionChecker，否则即使改了 Settings
-                // 工具执行链用的仍然是旧模式，写操作依然能通过。
+                // 模式切换必须同步到运行时 PermissionChecker，否则即使改了 Settings，
+                // 工具执行链用的仍是旧模式，写操作依然能通过。
                 PermissionChecker checker = context != null ? context.getPermissionChecker() : null;
                 if (checker != null) {
                     checker.setMode(PermissionMode.PLAN);

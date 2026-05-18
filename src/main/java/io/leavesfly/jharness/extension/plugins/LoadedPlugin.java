@@ -102,7 +102,7 @@ public class LoadedPlugin {
     }
 
     /**
-     * 【P0-1】插件提供的 slash command 模板（Markdown 形式的 prompt 模板）。
+     * 插件提供的 slash command 模板（Markdown 形式的 prompt 模板）。
      */
     public List<SkillDefinition> getCommandPrompts() {
         return commandPrompts;
@@ -113,7 +113,7 @@ public class LoadedPlugin {
     }
 
     /**
-     * 【P0-2】插件提供的子代理定义（Markdown 形式的 agent 说明）。
+     * 插件提供的子代理定义（Markdown 形式的 agent 说明）。
      */
     public List<SkillDefinition> getAgentDefs() {
         return agentDefs;

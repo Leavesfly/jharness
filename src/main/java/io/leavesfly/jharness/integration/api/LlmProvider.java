@@ -9,7 +9,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.function.Consumer;
 
 /**
- * LLM Provider 抽象接口（F-P0-1）。
+ * LLM Provider 抽象接口。
  *
  * 目标：将"与 LLM 的交互协议"从上层 QueryEngine 解耦，使得后续可以平行扩展
  * Anthropic / Gemini / Bedrock / Ollama 等不同供应商而无需改动 QueryEngine。
@@ -39,7 +39,7 @@ public interface LlmProvider extends AutoCloseable {
             Consumer<StreamEvent> eventConsumer);
 
     /**
-     * 取消当前所有活跃的流式请求（F-P0-3 流式中断依赖此方法）。
+     * 取消当前所有活跃的流式请求（流式中断依赖此方法）。
      *
      * 实现应保证：
      * - 幂等：多次调用不会抛异常；

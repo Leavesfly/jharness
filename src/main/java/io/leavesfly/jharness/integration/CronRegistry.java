@@ -28,7 +28,7 @@ import java.util.stream.Collectors;
  * 支持基于 ScheduledExecutorService 的定时调度执行。
  * 作业也可通过 RemoteTriggerTool 按需触发执行。
  *
- * P-10：实现 {@link AutoCloseable}，允许调用方用 try-with-resources 管理生命周期；
+ * 实现 {@link AutoCloseable}，允许调用方用 try-with-resources 管理生命周期；
  * {@link #shutdown()} 幂等（通过 {@code closed} volatile 标志），重复调用无副作用。
  */
 public class CronRegistry implements AutoCloseable {
@@ -54,7 +54,7 @@ public class CronRegistry implements AutoCloseable {
     // 修复并发 bug：旧实现用 HashMap 却在 synchronized(jobsLock) 之外访问，存在数据竞争
     private final Map<String, ScheduledFuture<?>> scheduledTasks = new ConcurrentHashMap<>();
     private final Object jobsLock = new Object();
-    /** P-10：幂等关闭标志。多次 shutdown()/close() 只执行一次真正的清理。 */
+    /** 幂等关闭标志。多次 shutdown()/close() 只执行一次真正的清理。 */
     private volatile boolean closed = false;
     private CronJobExecutor jobExecutor;
 
@@ -175,7 +175,7 @@ public class CronRegistry implements AutoCloseable {
     }
 
     /**
-     * 关闭调度器（P-10：幂等 + 有界等待，避免 daemon 线程在极端场景下一直阻塞 JVM 关闭）。
+     * 关闭调度器：幂等 + 有界等待，避免 daemon 线程在极端场景下阻塞 JVM 关闭。
      */
     public synchronized void shutdown() {
         if (closed) {
@@ -205,7 +205,7 @@ public class CronRegistry implements AutoCloseable {
     }
 
     /**
-     * P-10：AutoCloseable 实现，委托给 {@link #shutdown()}。
+     * AutoCloseable 实现，委托给 {@link #shutdown()}。
      */
     @Override
     public void close() {

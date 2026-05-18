@@ -59,13 +59,13 @@ public class McpClientManager {
     private final OkHttpClient sharedHttpClient;
 
     /**
-     * FP-3：可选的 PermissionChecker。注入后，stdio 类型的 MCP 服务器在 fork 子进程前
+     * 可选的 PermissionChecker。注入后，stdio 类型的 MCP 服务器在 fork 子进程前
      * 会先走权限评估，避免通过 MCP 配置绕过命令黑名单。
      */
     private volatile PermissionChecker permissionChecker;
 
     /**
-     * FP-3：注入 PermissionChecker，使 stdio MCP 服务器与前台工具共用同一套安全栅栏。
+     * 注入 PermissionChecker，使 stdio MCP 服务器与前台工具共用同一套安全栅栏。
      */
     public void setPermissionChecker(PermissionChecker permissionChecker) {
         this.permissionChecker = permissionChecker;
@@ -94,7 +94,7 @@ public class McpClientManager {
     /**
      * 连接所有配置的服务器
      *
-     * 【改造】连接完成后（无论成功/失败）会回调所有通过 {@link #onConnected(Runnable)} 注册的监听器，
+     * 连接完成后（无论成功/失败）会回调所有通过 {@link #onConnected(Runnable)} 注册的监听器，
      * 便于 ToolRegistry 在 MCP 工具可用后补注册 McpToolAdapter。
      */
     public CompletableFuture<Void> connectAll() {
@@ -107,13 +107,13 @@ public class McpClientManager {
     }
 
     /**
-     * 【新增】连接完成监听器列表。使用 CopyOnWriteArrayList 保证并发读写安全。
+     * 连接完成监听器列表。使用 CopyOnWriteArrayList 保证并发读写安全。
      */
     private final List<Runnable> connectedListeners =
             new java.util.concurrent.CopyOnWriteArrayList<>();
 
     /**
-     * 【新增】注册"连接完成"监听器。{@link #connectAll()} 完成后（无论成功/失败）都会回调。
+     * 注册"连接完成"监听器。{@link #connectAll()} 完成后（无论成功/失败）都会回调。
      * 如果注册时已有连接好的服务器，会立刻触发一次回调，避免竞态导致错过事件。
      */
     public void onConnected(Runnable listener) {
@@ -131,7 +131,7 @@ public class McpClientManager {
         }
     }
 
-    /** 【新增】触发所有"连接完成"监听器，单个监听器异常不影响其它监听器。 */
+    /** 触发所有"连接完成"监听器，单个监听器异常不影响其它监听器。 */
     private void fireConnectedListeners() {
         for (Runnable r : connectedListeners) {
             try {
@@ -174,7 +174,7 @@ public class McpClientManager {
         Map<String, String> env = (Map<String, String>) config.get("env");
         String cwd = (String) config.get("cwd");
 
-        // FP-3：对 stdio MCP 的启动命令走 PermissionChecker。拼成完整命令行用于黑名单匹配，
+        // 对 stdio MCP 的启动命令走 PermissionChecker。拼成完整命令行用于黑名单匹配，
         // 防止通过 mcpServers 配置写入 "rm -rf /" 类命令绕过 bash 工具黑名单。
         PermissionChecker checker = permissionChecker;
         if (checker != null) {

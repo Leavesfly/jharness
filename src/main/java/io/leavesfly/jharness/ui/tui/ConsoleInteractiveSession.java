@@ -198,8 +198,8 @@ public class ConsoleInteractiveSession {
                 var optionalCmd = commandRegistry.lookup(input);
                 if (optionalCmd.isPresent()) {
                     try {
-                        // FP-2：/permissions、/plan 等命令需要通过 CommandContext 拿到 PermissionChecker
-                        // 才能把切模式同步到运行时。这里从 queryEngine 反向获取，避免旧构造方式下为 null。
+                        // /permissions、/plan 等命令通过 CommandContext 拿到运行时 PermissionChecker，
+                        // 才能把切模式同步到真实实例。从 queryEngine 反向获取，避免为 null。
                         PermissionChecker runtimeChecker =
                                 (queryEngine != null) ? queryEngine.getPermissionChecker() : null;
                         CommandContext ctx = new CommandContext(

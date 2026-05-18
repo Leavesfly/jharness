@@ -98,7 +98,7 @@ public class TerminalUI {
     }
 
     private void handleInput(KeyStroke keyStroke) {
-        // F-P0-3：正在等待 AI 响应时，ESC 触发取消而非退出 TUI；
+        // 正在等待 AI 响应时，ESC 触发取消而非退出 TUI；
         // 不在响应中时，ESC 保持原有语义（退出 TUI）。
         if (keyStroke.getKeyType() == KeyType.Escape) {
             if (waitingForResponse && queryEngine != null) {
@@ -161,7 +161,7 @@ public class TerminalUI {
                     commandRegistry.lookup(input).ifPresentOrElse(
                         slashCmd -> {
                             List<String> argList = args.isEmpty() ? List.of() : List.of(args.split("\\s+"));
-                            // FP-2：向命令上下文注入运行时 PermissionChecker，/plan、/permissions set 才能同步生效。
+                            // 注入运行时 PermissionChecker，/plan、/permissions set 才能同步生效。
                             PermissionChecker runtimeChecker =
                                     (queryEngine != null) ? queryEngine.getPermissionChecker() : null;
                             CommandContext ctx = new CommandContext(
@@ -243,7 +243,7 @@ public class TerminalUI {
     }
 
     /**
-     * F-P1-2：/plan 命令——查看当前执行计划
+     * /plan 命令：查看当前执行计划
      */
     private void handlePlanCommand() {
         io.leavesfly.jharness.core.plan.ExecutionPlan plan =
@@ -260,7 +260,7 @@ public class TerminalUI {
     }
 
     /**
-     * F-P1-2：/approve 命令——批准单个步骤并执行所有已批准步骤
+     * /approve 命令：批准单个步骤并执行所有已批准步骤
      */
     private void handleApproveCommand(String args) {
         io.leavesfly.jharness.core.plan.ExecutionPlan plan =
@@ -287,7 +287,7 @@ public class TerminalUI {
     }
 
     /**
-     * F-P1-2：/approve_all 命令——批准所有待定步骤并执行
+     * /approve_all 命令：批准所有待定步骤并执行
      */
     private void handleApproveAllCommand() {
         io.leavesfly.jharness.core.plan.ExecutionPlan plan =

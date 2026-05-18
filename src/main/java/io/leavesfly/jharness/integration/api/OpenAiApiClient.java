@@ -45,13 +45,13 @@ import java.util.function.Consumer;
  * 使用 OkHttp 实现与 OpenAI 兼容 API 的交互，支持流式响应和重试机制。
  * 兼容所有 OpenAI 标准协议的 API 端点（如 DashScope、DeepSeek、Moonshot、vLLM 等）。
  *
- * F-P0-1：实现 {@link LlmProvider} 接口，统一 Provider 抽象。
+ * 实现 {@link LlmProvider} 接口，统一 Provider 抽象。
  */
 public class OpenAiApiClient implements LlmProvider {
     private static final Logger logger = LoggerFactory.getLogger(OpenAiApiClient.class);
     private static final String CHAT_COMPLETIONS_PATH = "/v1/chat/completions";
     private static final String CHAT_COMPLETIONS_SUFFIX = "/chat/completions";
-    /** 默认超时常量（P2-M28）：保留为常量以便单元测试覆盖，实际可通过构造器覆盖。 */
+    /** 默认超时常量：保留为常量以便单元测试覆盖，实际可通过构造器覆盖。 */
     static final int DEFAULT_CONNECT_TIMEOUT_SECONDS = 30;
     static final int DEFAULT_READ_TIMEOUT_SECONDS = 300;
     static final int DEFAULT_WRITE_TIMEOUT_SECONDS = 30;
@@ -86,7 +86,7 @@ public class OpenAiApiClient implements LlmProvider {
     }
 
     /**
-     * 构造 API 客户端（自定义超时，P2-M28）。
+     * 构造 API 客户端（自定义超时）。
      *
      * 暴露超时参数，方便调用方从 Settings / 环境变量注入，避免硬编码 300s 在慢连接下不够或快连接下浪费。
      */
@@ -99,7 +99,7 @@ public class OpenAiApiClient implements LlmProvider {
                             + ", write=" + writeTimeoutSeconds);
         }
         String resolvedBaseUrl = baseUrl != null ? baseUrl : "https://api.openai.com";
-        // 【开箱即用】当 baseUrl 指向本地 Ollama 等本地端点且 apiKey 为空时，使用占位符 "ollama"，
+        // 当 baseUrl 指向本地 Ollama 等本地端点且 apiKey 为空时，使用占位符 "ollama"，
         // Ollama 本地服务不校验 Authorization 头，这样用户无需显式配置 API Key 即可启动。
         String effectiveApiKey = apiKey;
         if (effectiveApiKey == null || effectiveApiKey.isBlank()) {
@@ -210,7 +210,7 @@ public class OpenAiApiClient implements LlmProvider {
     }
 
     /**
-     * 取消当前所有活跃的流式请求（F-P0-3）。
+     * 取消当前所有活跃的流式请求。
      *
      * 保持 close() 不会被触发的情况下，仅主动关闭当前 SSE 连接，
      * 使得用户中断后仍可继续使用该 Provider 发起新请求。
@@ -646,7 +646,7 @@ public class OpenAiApiClient implements LlmProvider {
             ObjectNode userMsg = messagesArray.addObject();
             userMsg.put("role", "user");
 
-            // F-P1-3：如果消息仅含纯文本，使用字符串格式（兼容性最好）；
+            // 如果消息仅含纯文本，使用字符串格式（兼容性最好）；
             // 如果包含图片，使用 OpenAI content 数组格式。
             boolean hasImage = contentParts.stream().anyMatch(b -> b instanceof ImageBlock);
             if (hasImage) {

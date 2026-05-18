@@ -214,13 +214,13 @@ public class ToolRegistry {
     }
 
     /**
-     * 【新增】刷新 MCP 动态工具：把 {@link McpClientManager#listTools()} 里当前已连上的工具
-     * 以 {@link McpToolAdapter} 形式补注册到本 registry。已存在的工具名会被 register() 静默跳过
-     * （putIfAbsent 语义），因此本方法可多次调用，幂等。
+     * 刷新 MCP 动态工具：把 {@link McpClientManager#listTools()} 里当前已连上的工具
+     * 以 {@link McpToolAdapter} 形式补注册到本 registry。已存在的工具名会被 putIfAbsent
+     * 静默跳过，因此本方法可多次调用，幂等。
      *
-     * <p>背景：{@link #withDefaults} 调用时 MCP 连接通常还未完成（connectAll 是异步），
-     * 此时 listTools 返回空列表，动态工具会漏注册。
-     * JHarnessApplication 在 MCP 连接完成后会调用本方法补齐。
+     * <p>{@link #withDefaults} 调用时 MCP 连接通常还未完成（connectAll 是异步），
+     * 此时 listTools 返回空列表，动态工具会漏注册。JHarnessApplication 在 MCP 连接完成后
+     * 会调用本方法补齐。
      *
      * @param mcpManager MCP 客户端管理器，为 null 时直接返回 0
      * @return 本次新注册的 MCP 工具数量

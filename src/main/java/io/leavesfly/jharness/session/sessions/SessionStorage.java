@@ -32,14 +32,13 @@ public class SessionStorage {
 
     private final Path sessionsDir;
     /**
-     * 【B-15】锁表改为 static：所有 SessionStorage 实例共享同一把 per-sessionId 锁，
+     * 锁表为 static：所有 SessionStorage 实例共享同一把 per-sessionId 锁，
      * 避免 SessionCommandHandler 与自动保存钩子各自 new SessionStorage(同目录) 时
      * 出现并发写覆盖的问题。key 使用 "绝对路径#sessionId" 保证跨目录会话 id 重名也安全。
      *
-     * <p><b>【修复】</b>锁对象采用 <b>常驻</b> 策略（不做 remove）。原实现在 synchronized 块的
-     * finally 里 remove 锁，会导致：线程 A 持锁期间 remove 后，线程 B 再次 computeIfAbsent
-     * 拿到<strong>新的</strong>锁对象，与 A 互斥失效、并发写入覆盖。考虑到同一进程中
-     * 活跃会话 ID 数量极其有限（通常个位数），常驻锁表的内存占用可忽略。
+     * <p>锁对象常驻不做 remove：若在 synchronized 块的 finally 里 remove 锁，
+     * 线程 A 持锁期间 remove 后，线程 B 再次 computeIfAbsent 拿到新的锁对象，
+     * 与 A 互斥失效、并发写入覆盖。同一进程中活跃会话 ID 通常个位数，常驻锁表内存可忽略。
      */
     private static final Map<String, Object> SAVE_LOCKS = new ConcurrentHashMap<>();
 
@@ -47,7 +46,7 @@ public class SessionStorage {
         this.sessionsDir = sessionsDir;
         try {
             Files.createDirectories(sessionsDir);
-            // 【B-9】启动时清理历史 .tmp 残留（来自上次 JVM 崩溃的原子写中断），
+            // 启动时清理历史 .tmp 残留（来自上次 JVM 崩溃的原子写中断），
             // 防止 listSessions 过度遍历或磁盘占用持续增长。失败仅记 warn。
             cleanOrphanTempFiles();
         } catch (IOException e) {
@@ -55,7 +54,7 @@ public class SessionStorage {
         }
     }
 
-    /** 【B-9】清理 session-*.tmp 残留文件。安静失败，不影响主流程。 */
+    /** 清理 session-*.tmp 残留文件。安静失败，不影响主流程。 */
     private void cleanOrphanTempFiles() {
         try (Stream<Path> files = Files.list(sessionsDir)) {
             files.filter(p -> p.getFileName().toString().endsWith(".tmp"))
@@ -72,7 +71,7 @@ public class SessionStorage {
         }
     }
 
-    /** 【B-15】构造跨实例共享的锁 key。 */
+    /** 构造跨实例共享的锁 key。 */
     private String lockKey(String sessionId) {
         return sessionsDir.toAbsolutePath().normalize().toString() + "#" + sessionId;
     }

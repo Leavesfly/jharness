@@ -15,7 +15,7 @@ import java.util.List;
 import java.util.concurrent.CompletableFuture;
 
 /**
- * 多编辑原子操作工具（F-P1-4）。
+ * 多编辑原子操作工具。
  *
  * 对同一文件按给定顺序应用多个 edit 操作，全部成功才原子写回磁盘；
  * 任一 edit 校验失败（old_string 未找到 / 不唯一 / 与 new_string 相同）则整体回滚，

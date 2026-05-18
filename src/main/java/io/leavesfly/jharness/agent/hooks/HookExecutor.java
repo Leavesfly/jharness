@@ -72,7 +72,7 @@ public class HookExecutor {
     private final java.nio.file.Path cwd;
 
     /**
-     * FP-3：可选的 PermissionChecker。注入后，Command Hook 在 fork 子进程前会先走一次
+     * 可选的 PermissionChecker。注入后，Command Hook 在 fork 子进程前会先走一次
      * 权限评估（按 "bash" 工具名 + 命令字符串）。未注入时保持旧行为。
      */
     private volatile PermissionChecker permissionChecker;
@@ -83,7 +83,7 @@ public class HookExecutor {
     }
 
     /**
-     * FP-3：注入 PermissionChecker，使 Command Hook 与前台工具共用同一套权限栅栏。
+     * 注入 PermissionChecker，使 Command Hook 与前台工具共用同一套权限栅栏。
      */
     public void setPermissionChecker(PermissionChecker permissionChecker) {
         this.permissionChecker = permissionChecker;
@@ -194,9 +194,8 @@ public class HookExecutor {
                     "命令模板将 payload 嵌入到命令替换 $(...) / `...` 中，存在注入风险，已拒绝");
         }
 
-        // FP-3：走 PermissionChecker 的命令黑名单 + 工具黑白名单。
-        // 即使 Hook 是在 hooks.json 中被管理员预先定义的可信模板，也不应成为绕过
-        // 运行时命令黑名单的通道（例如管理员允许 Hook 但集团策略禁用 `sudo rm`）。
+        // 走 PermissionChecker 的命令黑名单 + 工具黑白名单。
+        // 即使 Hook 是 hooks.json 中预定义的可信模板，也不应成为绕过运行时命令黑名单的通道。
         PermissionChecker checker = permissionChecker;
         if (checker != null) {
             PermissionDecision decision = checker.evaluate("bash", false, null, command);

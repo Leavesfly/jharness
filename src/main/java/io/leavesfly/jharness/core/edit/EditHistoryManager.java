@@ -10,7 +10,7 @@ import java.util.List;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
- * 文件编辑历史管理器（F-P0-4）。
+ * 文件编辑历史管理器。
  *
  * 设计要点：
  * - 单例（通过 {@link #getInstance()} 获取），使得不同工具共享同一份撤销栈；

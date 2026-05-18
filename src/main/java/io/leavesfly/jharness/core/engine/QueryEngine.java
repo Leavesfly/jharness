@@ -42,33 +42,33 @@ public class QueryEngine implements AutoCloseable {
     private final Object messageLock = new Object();
     private final CostTracker costTracker = new CostTracker();
     /**
-     * 【改造】压缩服务改为可注入（不再 final 到无参默认实现），允许外部根据 Settings
-     * 注入自定义 token/条数预算，并通过 {@link MessageCompactionService#withSystemPromptTokens(int)}
-     * 把 systemPrompt 的 token 占用提前扣减，避免超长 CLAUDE.md 把压缩触发时机拖到超出 API 上下文。
+     * 压缩服务可注入：允许外部根据 Settings 注入自定义 token/条数预算，并通过
+     * {@link MessageCompactionService#withSystemPromptTokens(int)} 把 systemPrompt 的 token
+     * 占用提前扣减，避免超长 CLAUDE.md 把压缩触发时机拖到超出 API 上下文。
      */
     private volatile MessageCompactionService compactionService = new MessageCompactionService();
     private final LlmProvider apiClient;
     /**
-     * 【改造】原来是 final，现改为可替换（带 setter），便于 UI/上层在 MCP 动态工具
-     * 刷新后无需重建 engine。多线程场景下通过 volatile 保证可见性。
+     * ToolRegistry 可替换（带 setter），便于 UI/上层在 MCP 动态工具刷新后无需重建 engine。
+     * 多线程场景下通过 volatile 保证可见性。
      */
     private volatile ToolRegistry toolRegistry;
     private final PermissionChecker permissionChecker;
     private volatile Path cwd;
     private final String systemPrompt;
     private final int maxTurns;
-    /** F-P0-3 流式中断标志：submitMessage 开始时置 false，cancel() 置 true，循环每轮检查。 */
+    /** 流式中断标志：submitMessage 开始时置 false，cancel() 置 true，循环每轮检查。 */
     private final java.util.concurrent.atomic.AtomicBoolean cancelled =
             new java.util.concurrent.atomic.AtomicBoolean(false);
     /**
-     * 【新增】会话持久化钩子。每当一轮交互结束（含压缩、超时、取消）后调用，
+     * 会话持久化钩子。每当一轮交互结束（含压缩、超时、取消）后调用，
      * 由上层决定如何把当前 messages 快照写入 SessionStorage。null 表示关闭自动保存。
      */
     private volatile java.util.function.Consumer<java.util.List<ConversationMessage>>
             sessionPersister;
 
     /**
-     * 【新增】可选的 Hook 发射器。注入后：
+     * 可选的 Hook 发射器。注入后：
      * <ul>
      *   <li>{@link #submitMessage} 入口会发 {@code USER_PROMPT_SUBMIT}；</li>
      *   <li>{@link #submitMessage} 返回前会发 {@code STOP}。</li>
@@ -90,7 +90,7 @@ public class QueryEngine implements AutoCloseable {
     }
 
     /**
-     * 构造函数（F-P0-1：支持任意 LlmProvider 实现）。
+     * 构造函数：支持任意 {@link LlmProvider} 实现。
      */
     public QueryEngine(LlmProvider apiClient, ToolRegistry toolRegistry,
                        PermissionChecker permissionChecker, Path cwd,
@@ -104,7 +104,7 @@ public class QueryEngine implements AutoCloseable {
     }
 
     /**
-     * 取消当前正在进行的查询（F-P0-3）。
+     * 取消当前正在进行的查询。
      *
      * 调用后：
      * - 中断当前活跃的 SSE 连接；
@@ -126,7 +126,7 @@ public class QueryEngine implements AutoCloseable {
     }
 
     /**
-     * 【新增】注入自定义压缩服务，上层可通过它把 systemPrompt 的 token 占用扣减到预算里，
+     * 注入自定义压缩服务，上层可通过它把 systemPrompt 的 token 占用扣减到预算里，
      * 或换成基于 token 的更激进压缩策略。
      */
     public void setCompactionService(MessageCompactionService service) {
@@ -136,8 +136,8 @@ public class QueryEngine implements AutoCloseable {
     }
 
     /**
-     * 【新增】替换 ToolRegistry。用于 MCP 异步连接完成后把动态工具刷新到 engine。
-     * 注：通常直接在原 ToolRegistry 上 refreshMcpTools 就够了，此 setter 仅用于极端场景。
+     * 替换 ToolRegistry。用于 MCP 异步连接完成后把动态工具刷新到 engine。
+     * 通常直接在原 ToolRegistry 上 refreshMcpTools 就够了，此 setter 仅用于极端场景。
      */
     public void setToolRegistry(ToolRegistry registry) {
         if (registry != null) {
@@ -146,16 +146,15 @@ public class QueryEngine implements AutoCloseable {
     }
 
     /**
-     * 【新增】获取 ToolRegistry，供交互 UI / 命令注册表使用。
+     * 获取 ToolRegistry，供交互 UI / 命令注册表使用。
      */
     public ToolRegistry getToolRegistry() {
         return this.toolRegistry;
     }
 
     /**
-     * 【P0-wire-up】已加载的插件列表（只用于在构造 CommandRegistry / teamRegistry 时
+     * 已加载的插件列表（只用于在构造 CommandRegistry / teamRegistry 时
      * 传递 plugin 的 commands & agents，不影响 engine 本身行为）。
-     *
      * 用 Object 持有避免 QueryEngine 直接依赖 extension 包，降低耦合。
      */
     private volatile java.util.List<Object> loadedPlugins = java.util.Collections.emptyList();
@@ -171,7 +170,7 @@ public class QueryEngine implements AutoCloseable {
     }
 
     /**
-     * 【新增】设置会话持久化钩子，null 表示关闭自动保存。
+     * 设置会话持久化钩子，null 表示关闭自动保存。
      * QueryEngine 会在每轮消息变更后（包括压缩、工具结果、超时、取消）回调一次。
      */
     public void setSessionPersister(
@@ -180,7 +179,7 @@ public class QueryEngine implements AutoCloseable {
     }
 
     /**
-     * 【新增】注入可选的 Hook 发射器 + 会话 ID。
+     * 注入可选的 Hook 发射器 + 会话 ID。
      *
      * @param hookExecutor {@code io.leavesfly.jharness.agent.hooks.HookExecutor} 实例；null 表示关闭 Hook
      * @param sessionId    会话 ID，写入 payload "session_id"
@@ -191,7 +190,7 @@ public class QueryEngine implements AutoCloseable {
     }
 
     /**
-     * 【新增】尽力而为地发射一次 Hook 事件。通过反射调用 HookExecutor.execute，
+     * 尽力而为地发射一次 Hook 事件。通过反射调用 HookExecutor.execute，
      * 任何异常都只记 debug，绝不影响主流程。
      *
      * @param eventName 对应 {@code HookEvent} 枚举名
@@ -217,7 +216,7 @@ public class QueryEngine implements AutoCloseable {
     }
 
     /**
-     * 【新增】向 sessionPersister 推送当前消息快照，异常被吞掉并记录日志，
+     * 向 sessionPersister 推送当前消息快照，异常被吞掉并记录日志，
      * 保证持久化失败不会影响主循环。
      */
     private void persistIfNeeded() {
@@ -270,16 +269,16 @@ public class QueryEngine implements AutoCloseable {
      * @return 执行完成的 Future
      */
     public CompletableFuture<Void> submitMessage(String prompt, Consumer<StreamEvent> eventConsumer) {
-        // F-P0-3：新的提交开始时复位取消标志，避免上次的 cancel 影响新查询
+        // 新的提交开始时复位取消标志，避免上次的 cancel 影响新查询
         cancelled.set(false);
-        // 【Hook】USER_PROMPT_SUBMIT：在消息入队前触发，payload 含 prompt 供审计/重写
+        // USER_PROMPT_SUBMIT：在消息入队前触发，payload 含 prompt 供审计/重写
         fireHook("USER_PROMPT_SUBMIT", java.util.Map.of("prompt", prompt == null ? "" : prompt));
         synchronized (messageLock) {
             messages.add(ConversationMessage.userText(prompt));
         }
         return runQuery(eventConsumer)
                 .whenComplete((v, err) -> {
-                    // 【Hook】STOP：无论正常 / 异常 / 取消，都发射一次 STOP
+                    // STOP：无论正常 / 异常 / 取消，都发射一次 STOP
                     java.util.Map<String, Object> p = new java.util.HashMap<>();
                     p.put("cancelled", cancelled.get());
                     p.put("error", err == null ? null : String.valueOf(err.getMessage()));
@@ -314,7 +313,7 @@ public class QueryEngine implements AutoCloseable {
     }
 
     /**
-     * FP-2：暴露运行时 PermissionChecker 给 TUI / CLI 的命令处理器，
+     * 暴露运行时 PermissionChecker 给 TUI / CLI 的命令处理器，
      * 让 /plan、/permissions 等命令能把模式切换同步到真正在工作的实例上。
      */
     public PermissionChecker getPermissionChecker() {
@@ -339,17 +338,17 @@ public class QueryEngine implements AutoCloseable {
     }
 
     /**
-     * 【新增】engine 关闭时要调用的额外清理钩子。用于把 MCP / Cron / BackgroundTask 等后台资源
+     * engine 关闭时要调用的额外清理钩子。用于把 MCP / Cron / BackgroundTask 等后台资源
      * 的生命周期绑定到 engine，避免单测或脚本调用时线程泄漏。
      *
-     * <p>设计说明：使用 CopyOnWriteArrayList 保证注册/遍历的线程安全；
+     * <p>使用 CopyOnWriteArrayList 保证注册/遍历的线程安全；
      * 钩子逆序执行（后注册先释放），符合 LIFO 的资源关闭习惯。
      */
     private final java.util.List<Runnable> closeHooks =
             new java.util.concurrent.CopyOnWriteArrayList<>();
 
     /**
-     * 【新增】注册一个在 {@link #close()} 时执行的清理钩子。
+     * 注册一个在 {@link #close()} 时执行的清理钩子。
      * 钩子内部应自行处理异常；主流程会在异常时记录日志但不中断后续钩子。
      */
     public void registerCloseHook(Runnable hook) {
@@ -360,7 +359,7 @@ public class QueryEngine implements AutoCloseable {
 
     /**
      * 关闭 QueryEngine，释放底层 API 客户端资源（HTTP 连接池、线程池等），
-     * 并按 LIFO 顺序执行所有已注册的 close hook（【新增】）。
+     * 并按 LIFO 顺序执行所有已注册的 close hook。
      */
     @Override
     public void close() {
@@ -369,7 +368,7 @@ public class QueryEngine implements AutoCloseable {
         } catch (Exception e) {
             logger.warn("关闭 ApiClient 失败", e);
         }
-        // 【新增】逆序执行注册的 close hook，每个钩子独立 try/catch
+        // 逆序执行注册的 close hook，每个钩子独立 try/catch
         for (int i = closeHooks.size() - 1; i >= 0; i--) {
             try {
                 closeHooks.get(i).run();
@@ -389,7 +388,7 @@ public class QueryEngine implements AutoCloseable {
                 for (int turn = 0; turn < maxTurns; turn++) {
                     logger.debug("执行第 {} 轮查询", turn + 1);
 
-                    // F-P0-3：每轮循环开始检查取消标志
+                    // 每轮循环开始检查取消标志
                     if (cancelled.get()) {
                         logger.info("查询被用户取消（第 {} 轮前）", turn + 1);
                         eventConsumer.accept(new io.leavesfly.jharness.core.engine.stream.AssistantTurnComplete(
@@ -417,7 +416,7 @@ public class QueryEngine implements AutoCloseable {
                         response = apiClient.streamMessage(
                                 snapshot, systemPrompt, toolRegistry.toApiSchema(), eventConsumer).join();
                     } catch (java.util.concurrent.CancellationException ce) {
-                        // F-P0-3：SSE 被 cancelAllActiveRequests 关闭时，future 以 CancellationException 完成
+                        // SSE 被 cancelAllActiveRequests 关闭时，future 以 CancellationException 完成
                         logger.info("LLM 请求被取消");
                         eventConsumer.accept(new io.leavesfly.jharness.core.engine.stream.AssistantTurnComplete(
                                 "查询已被用户取消"));
@@ -434,7 +433,7 @@ public class QueryEngine implements AutoCloseable {
                         throw ex;
                     }
 
-                    // F-P0-3：拿到响应后再次检查取消标志（避免把"已取消但已返回"的结果继续推进到工具执行）
+                    // 拿到响应后再次检查取消标志（避免把"已取消但已返回"的结果继续推进到工具执行）
                     if (cancelled.get()) {
                         logger.info("查询已在收到响应后被取消");
                         eventConsumer.accept(new io.leavesfly.jharness.core.engine.stream.AssistantTurnComplete(
@@ -442,7 +441,7 @@ public class QueryEngine implements AutoCloseable {
                         return;
                     }
 
-                    // 记录使用量（F-P0-5：可能抛 BudgetExceededException）
+                    // 记录使用量（可能抛 BudgetExceededException）
                     long turnInputTokens = 0L;
                     long turnOutputTokens = 0L;
                     if (response.getUsage() != null) {
@@ -496,7 +495,7 @@ public class QueryEngine implements AutoCloseable {
                         messages.add(assistantMsg);
                     }
 
-                    // F-P1-2：Plan Mode 拦截——如果处于 Plan Mode，将工具调用记录为 PlanStep 而非执行
+                    // Plan Mode 拦截：如果处于 Plan Mode，将工具调用记录为 PlanStep 而非执行
                     ExecutionPlan activePlan = EnterPlanModeTool.getActivePlan();
                     if (activePlan != null) {
                         List<ToolResultBlock> planResults = interceptToolCallsForPlan(
@@ -650,9 +649,8 @@ public class QueryEngine implements AutoCloseable {
                     }
                 }
 
-                // 执行工具
-                // FP-2：注入 PermissionChecker，使 EnterPlanModeTool/ExitPlanModeTool 等能把
-                // 模式切换同步到真正在工作的 PermissionChecker 实例，而不仅仅落到 Settings。
+                // 执行工具：注入 PermissionChecker，使 EnterPlanModeTool/ExitPlanModeTool
+                // 能把模式切换同步到运行时实例，而不仅仅落到 Settings。
                 ToolExecutionContext context = new ToolExecutionContext(cwd, null, permissionChecker);
                 return tool.execute(input, context).join();
 
@@ -668,7 +666,7 @@ public class QueryEngine implements AutoCloseable {
     }
 
     /**
-     * F-P1-2：Plan Mode 下拦截工具调用，将其记录为 PlanStep 而不是真正执行。
+     * Plan Mode 下拦截工具调用，将其记录为 PlanStep 而不是真正执行。
      * 返回的 ToolResultBlock 告知 LLM "已记录到执行计划"，使其可以继续输出后续步骤。
      */
     private List<ToolResultBlock> interceptToolCallsForPlan(
@@ -711,7 +709,7 @@ public class QueryEngine implements AutoCloseable {
     }
 
     /**
-     * F-P1-2：执行已批准的 PlanStep 列表。
+     * 执行已批准的 PlanStep 列表。
      * 由 /approve 或 /approve_all 命令触发，按照步骤顺序逐个执行工具。
      *
      * @param plan          执行计划

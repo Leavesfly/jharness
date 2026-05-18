@@ -15,10 +15,9 @@ import java.util.concurrent.atomic.AtomicReference;
  * 跟踪 API 调用的 token 使用情况和估算成本。
  * 使用 AtomicLong/AtomicInteger 保证线程安全。
  *
- * F-P0-5 升级：
- * - 新增模型名 + 价格表，实时估算 USD 成本；
- * - 新增每日预算上限 {@code dailyBudgetUsd}，超限时抛出 {@link BudgetExceededException}；
- * - 支持按日期自动重置日度计数（跨日首次 {@link #addUsage} 会重置当日累计）。
+ * 通过模型名 + 价格表实时估算 USD 成本；支持每日预算上限 {@code dailyBudgetUsd}，
+ * 超限时抛出 {@link BudgetExceededException}；按日期自动重置日度计数
+ * （跨日首次 {@link #addUsage} 会重置当日累计）。
  */
 public class CostTracker {
     private final AtomicLong totalInputTokens = new AtomicLong();

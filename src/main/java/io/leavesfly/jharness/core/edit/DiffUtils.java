@@ -4,7 +4,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * 极简 Unified Diff 工具（F-P0-4）。
+ * 极简 Unified Diff 工具。
  *
  * 无外部依赖实现逐行差异输出，仅用于"给人看"的预览，而非补丁应用：
  * - 使用最长公共子序列（LCS）算法计算逐行差异；

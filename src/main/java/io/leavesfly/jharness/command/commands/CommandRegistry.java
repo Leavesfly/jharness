@@ -51,11 +51,10 @@ public class CommandRegistry {
         AgentCommandHandler agentHandler = new AgentCommandHandler(teamRegistry, orchestrator);
         registry.register(agentHandler.createAgentsCommand());
 
-        // 【B-12】会话类命令在基础构造 registerAllCommands() 中已经注册过一次，
-        // 这里如果再注册一次 createSessionCommand/createShareCommand 等，会用新的 SessionStorage
-        // 实例覆盖掉旧的（`register()` 是 put 语义）。虽然功能上等价，但容易在单测中掩盖问题。
-        // 改为：只在基础版未注册过的命令才补注册，保证幂等且不会"静默覆盖"。
-        // 注意：基础版使用的 SessionStorage 指向同一个 ~/.jharness/sessions，语义一致。
+        // 会话类命令在基础构造 registerAllCommands() 中已经注册过一次，
+        // 这里只在基础版未注册过的命令才补注册，保证幂等且不会"静默覆盖"
+        // （直接 register() 会用新 SessionStorage 实例覆盖旧的，容易在单测中掩盖问题）。
+        // 基础版使用的 SessionStorage 指向同一个 ~/.jharness/sessions，语义一致。
 
         // 注册 Cron 命令
         if (cronRegistry != null) {
@@ -128,8 +127,7 @@ public class CommandRegistry {
         register(GitCommandHandler.createCommitCommand());
         register(GitCommandHandler.createFilesCommand());
         
-        // 会话命令
-        // P-02 修复：从 ~/.openharness/sessions 改为 ~/.jharness/sessions，与项目数据目录一致
+        // 会话命令：与项目数据目录保持一致，使用 ~/.jharness/sessions
         Path sessionsDir = Settings.getDefaultDataDir().resolve("sessions");
         SessionStorage sessionStorage = new SessionStorage(sessionsDir);
 
@@ -144,8 +142,7 @@ public class CommandRegistry {
         register(SessionCommandHandler.createContextCommand());
         register(SessionCommandHandler.createSummaryCommand());
         
-        // 工具和系统命令
-        // P-02 修复：从 ~/.openharness/memory 改为 ~/.jharness/memories，与项目数据目录一致
+        // 工具和系统命令：与项目数据目录保持一致，使用 ~/.jharness/memories
         Path memoryDir = Settings.getDefaultDataDir().resolve("memories");
         MemoryManager memoryManager = new MemoryManager(memoryDir);
 
@@ -190,7 +187,7 @@ public class CommandRegistry {
     public void register(SlashCommand command) { commands.put(command.getName().toLowerCase(), command); }
 
     /**
-     * 【B-12】判断指定名字的命令是否已被注册，用于 createFullRegistry 防重复注册。
+     * 判断指定名字的命令是否已被注册，用于 createFullRegistry 防重复注册。
      */
     public boolean hasCommand(String name) {
         if (name == null) return false;
