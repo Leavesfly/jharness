@@ -59,17 +59,19 @@ class ArchitectureRulesTest {
 
     @Test
     void kernelMustNotDependOnUpperLayers() {
-        // 已知例外：QueryEngine / ToolCallDispatcher / PlanStepRunner 直接持有
-        // tools.ToolRegistry 与 tools.ToolResult，作为 4.7 拆分后的现状契约。
-        // 后续若要彻底解耦，可把 ToolRegistry/ToolResult 抽接口下沉到 kernel.spi。
+        // 已知例外：
+        //   1) kernel.engine / kernel.engine.tools：QueryEngine 与调度器需要引用 tools 包做编排；
+        //   2) kernel.spi：SPI 接口（PermissionGate / ToolCatalog）的签名需要引用
+        //      capability.permission 的值对象（PermissionDecision / PermissionMode）
+        //      与 tools.BaseTool 作为契约的一部分——这是正向的「契约引用」，不是反向依赖。
         ArchRule rule = noClasses()
                 .that().resideInAPackage("..kernel..")
                 .and().resideOutsideOfPackages(
-                        "..kernel.engine..", "..kernel.engine.tools..")
+                        "..kernel.engine..", "..kernel.engine.tools..", "..kernel.spi..")
                 .should().dependOnClassesThat().resideInAnyPackage(
                         "..capability..", "..integration..", "..tools..",
                         "..command..", "..ui..", "..app..")
-                .because("kernel 必须保持纯净；仅 engine 子包允许引用 tools/capability/integration 作为编排");
+                .because("kernel 必须保持纯净；engine 子包允许编排 tools，spi 子包允许引用契约值对象");
         rule.check(classes);
     }
 
@@ -167,20 +169,45 @@ class ArchitectureRulesTest {
 
     @Test
     void topLevelSlicesShouldBeFreeOfCycles() {
-        // 已知循环（架构债，暂不破坏）：
-        //   1) kernel ↔ tools：ToolResult/ToolResultBlock、ExecutionPlan/EnterPlanModeTool 互相引用；
-        //   2) capability ↔ tools：BackgroundTaskManager 与 BashTool 等存在双向；
-        //   3) capability ↔ integration：McpClientManager 持有 PermissionChecker。
-        // 这些循环属 4.x 拆类范围外的接口下沉工作（建议下一阶段把 SPI 抽到 kernel.spi 子包消解）。
-        // 这里仅守护「新增循环」：忽略上述已知 slices 对，对其它新增循环立即失败。
+        // B 路线 P0-2/P0-3 通过 kernel/spi/（PermissionGate / ToolCatalog / LlmGateway）
+        // 把"内核字段持有上层实现"的反向依赖全部翻转为接口依赖。
+        //
+        // 但 ArchUnit 的 Slices 规则按顶级包（kernel/tools/capability/integration）切片，
+        // 仍会把下面这些**合法的契约引用**算作反向边：
+        //   1) kernel.spi 接口签名引用 capability.permission.PermissionDecision/PermissionMode
+        //      与 integration.api.ApiMessageCompleteEvent 作为返回值/参数；
+        //   2) kernel.spi.ToolCatalog 接口签名引用 tools.BaseTool 作为返回值；
+        //   3) kernel.engine.tools.ToolCallDispatcher / PlanStepRunner 消费 tools.ToolResult
+        //      与 capability.permission.PermissionDecision 的 getter（消费 SPI 返回值）；
+        //   4) kernel.engine.QueryEngine 兼容构造器仍接受 integration.api.OpenAiApiClient，
+        //      并调用 ApiMessageCompleteEvent 的 getter（消费 LlmGateway 返回值）；
+        //   5) kernel.engine.QueryEngine 持有 tools.ToolRegistry 字段（兼容已有调用方）。
+        //
+        // 这些都属于「内核内部子包通过 SPI 接口与上层达成的契约引用」，不是上层实现回流
+        // 到内核——是依赖反转的副作用，不构成真正的行为级循环。
         ArchRule rule = slices()
                 .matching("io.leavesfly.jharness.(*)..")
                 .should().beFreeOfCycles()
+                // SPI 接口 → capability.permission / integration.api 的值对象引用
                 .ignoreDependency(
+                        com.tngtech.archunit.core.domain.JavaClass.Predicates.resideInAPackage(
+                                "..kernel.spi.."),
                         com.tngtech.archunit.core.domain.JavaClass.Predicates.resideInAnyPackage(
-                                "..kernel..", "..capability..", "..integration.."),
+                                "..capability.permission..",
+                                "..integration.api..",
+                                "..tools.."))
+                // kernel.engine.tools 调度器消费 tools.ToolResult / capability.permission.PermissionDecision
+                .ignoreDependency(
+                        com.tngtech.archunit.core.domain.JavaClass.Predicates.resideInAPackage(
+                                "..kernel.engine.tools.."),
                         com.tngtech.archunit.core.domain.JavaClass.Predicates.resideInAnyPackage(
-                                "..tools..", "..capability..", "..integration.."));
+                                "..tools..", "..capability.permission.."))
+                // kernel.engine.QueryEngine 兼容 OpenAiApiClient 构造器 + 消费 ApiMessageCompleteEvent
+                .ignoreDependency(
+                        com.tngtech.archunit.core.domain.JavaClass.Predicates.resideInAPackage(
+                                "..kernel.engine.."),
+                        com.tngtech.archunit.core.domain.JavaClass.Predicates.resideInAnyPackage(
+                                "..integration.api..", "..tools.."));
         rule.check(classes);
     }
 }

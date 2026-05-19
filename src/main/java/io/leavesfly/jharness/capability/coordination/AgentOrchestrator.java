@@ -1,8 +1,8 @@
 package io.leavesfly.jharness.capability.coordination;
 
 import io.leavesfly.jharness.kernel.engine.QueryEngine;
-import io.leavesfly.jharness.tools.ToolRegistry;
 import io.leavesfly.jharness.kernel.engine.model.ConversationMessage;
+import io.leavesfly.jharness.kernel.spi.ToolCatalog;
 import io.leavesfly.jharness.kernel.engine.stream.AssistantTextDelta;
 import io.leavesfly.jharness.kernel.engine.stream.StreamEvent;
 import io.leavesfly.jharness.kernel.engine.stream.ToolExecutionCompleted;
@@ -24,7 +24,8 @@ public class AgentOrchestrator {
     private static final Logger logger = LoggerFactory.getLogger(AgentOrchestrator.class);
 
     private final QueryEngine queryEngine;
-    private final ToolRegistry toolRegistry;
+    /** 工具目录（依赖 SPI 接口而非 tools.ToolRegistry，消除 capability → tools 的反向依赖）。 */
+    private final ToolCatalog toolRegistry;
     private final ExecutorService executorService;
     private final Map<String, AgentInstance> activeAgents = new ConcurrentHashMap<>();
     private QueryEngineFactory queryEngineFactory;
@@ -43,7 +44,7 @@ public class AgentOrchestrator {
         QueryEngine create(String model, String systemPrompt);
     }
 
-    public AgentOrchestrator(QueryEngine queryEngine, ToolRegistry toolRegistry) {
+    public AgentOrchestrator(QueryEngine queryEngine, ToolCatalog toolRegistry) {
         this.queryEngine = queryEngine;
         this.toolRegistry = toolRegistry;
         // 有界线程池 + 命名 ThreadFactory：

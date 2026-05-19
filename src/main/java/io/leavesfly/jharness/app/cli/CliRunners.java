@@ -4,7 +4,7 @@ import io.leavesfly.jharness.app.bootstrap.PluginBootstrap;
 import io.leavesfly.jharness.capability.coordination.AgentOrchestrator;
 import io.leavesfly.jharness.capability.coordination.TeamRegistry;
 import io.leavesfly.jharness.capability.hook.HookRegistry;
-import io.leavesfly.jharness.command.commands.CommandRegistry;
+import io.leavesfly.jharness.command.CommandRegistry;
 import io.leavesfly.jharness.config.Settings;
 import io.leavesfly.jharness.extension.plugins.LoadedPlugin;
 import io.leavesfly.jharness.integration.cron.CronRegistry;

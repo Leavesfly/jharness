@@ -7,15 +7,15 @@ import com.googlecode.lanterna.input.KeyType;
 import com.googlecode.lanterna.terminal.DefaultTerminalFactory;
 import com.googlecode.lanterna.terminal.Terminal;
 import com.googlecode.lanterna.terminal.ansi.UnixTerminal;
-import io.leavesfly.jharness.command.commands.CommandContext;
-import io.leavesfly.jharness.command.commands.CommandRegistry;
+import io.leavesfly.jharness.command.CommandContext;
+import io.leavesfly.jharness.command.CommandRegistry;
 import io.leavesfly.jharness.kernel.engine.QueryEngine;
 import io.leavesfly.jharness.kernel.engine.stream.AssistantTextDelta;
 import io.leavesfly.jharness.kernel.engine.stream.AssistantTurnComplete;
 import io.leavesfly.jharness.kernel.engine.stream.StreamEvent;
 import io.leavesfly.jharness.kernel.engine.stream.ToolExecutionCompleted;
 import io.leavesfly.jharness.kernel.engine.stream.ToolExecutionStarted;
-import io.leavesfly.jharness.capability.permission.PermissionChecker;
+import io.leavesfly.jharness.kernel.spi.PermissionGate;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -161,8 +161,8 @@ public class TerminalUI {
                     commandRegistry.lookup(input).ifPresentOrElse(
                         slashCmd -> {
                             List<String> argList = args.isEmpty() ? List.of() : List.of(args.split("\\s+"));
-                            // 注入运行时 PermissionChecker，/plan、/permissions set 才能同步生效。
-                            PermissionChecker runtimeChecker =
+                            // 注入运行时权限闸门，/plan、/permissions set 才能同步生效。
+                            PermissionGate runtimeChecker =
                                     (queryEngine != null) ? queryEngine.getPermissionChecker() : null;
                             CommandContext ctx = new CommandContext(
                                     java.nio.file.Paths.get(System.getProperty("user.dir")),

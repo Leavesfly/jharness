@@ -4,6 +4,7 @@ import io.leavesfly.jharness.capability.permission.rule.DeniedCommandsRule;
 import io.leavesfly.jharness.capability.permission.rule.DeniedToolsRule;
 import io.leavesfly.jharness.capability.permission.rule.ModeDecisionRule;
 import io.leavesfly.jharness.capability.permission.rule.PathRulesRule;
+import io.leavesfly.jharness.kernel.spi.PermissionGate;
 
 import java.util.Collections;
 import java.util.List;
@@ -28,7 +29,7 @@ import java.util.concurrent.CopyOnWriteArraySet;
  *
  * 线程安全：集合采用 Copy-On-Write，mode 为 volatile；规则实现无状态，可并发评估。
  */
-public class PermissionChecker {
+public class PermissionChecker implements PermissionGate {
 
     /** 默认规则链。顺序敏感，不可重排。 */
     private static final List<PermissionRule> DEFAULT_RULES = List.of(

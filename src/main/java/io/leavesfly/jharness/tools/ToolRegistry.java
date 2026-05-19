@@ -6,6 +6,7 @@ import io.leavesfly.jharness.integration.mcp.McpClientManager;
 import io.leavesfly.jharness.integration.cron.CronRegistry;
 import io.leavesfly.jharness.extension.skills.SkillRegistry;
 import io.leavesfly.jharness.capability.task.BackgroundTaskManager;
+import io.leavesfly.jharness.kernel.spi.ToolCatalog;
 import io.leavesfly.jharness.tools.builtin.file.FileReadTool;
 import io.leavesfly.jharness.tools.builtin.file.FileWriteTool;
 import io.leavesfly.jharness.tools.builtin.file.FileEditTool;
@@ -42,11 +43,11 @@ import io.leavesfly.jharness.tools.builtin.mode.EnterPlanModeTool;
 import io.leavesfly.jharness.tools.builtin.mode.ExitPlanModeTool;
 import io.leavesfly.jharness.tools.builtin.mode.EnterWorktreeTool;
 import io.leavesfly.jharness.tools.builtin.mode.ExitWorktreeTool;
-import io.leavesfly.jharness.tools.builtin.misc.ConfigTool;
-import io.leavesfly.jharness.tools.builtin.misc.BriefTool;
-import io.leavesfly.jharness.tools.builtin.misc.TodoWriteTool;
-import io.leavesfly.jharness.tools.builtin.misc.ToolSearchTool;
-import io.leavesfly.jharness.tools.builtin.misc.SkillTool;
+import io.leavesfly.jharness.tools.builtin.config.ConfigTool;
+import io.leavesfly.jharness.tools.builtin.meta.BriefTool;
+import io.leavesfly.jharness.tools.builtin.task.TodoWriteTool;
+import io.leavesfly.jharness.tools.builtin.meta.ToolSearchTool;
+import io.leavesfly.jharness.tools.builtin.meta.SkillTool;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -59,7 +60,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * 管理所有已注册的工具，提供工具查询和 API Schema 生成。
  * 使用 ConcurrentHashMap 保证线程安全。
  */
-public class ToolRegistry {
+public class ToolRegistry implements ToolCatalog {
     private static final Logger logger = LoggerFactory.getLogger(ToolRegistry.class);
 
     private final Map<String, BaseTool<?>> tools = new ConcurrentHashMap<>();
@@ -125,6 +126,12 @@ public class ToolRegistry {
      */
     public Collection<BaseTool<?>> getAllTools() {
         return Collections.unmodifiableCollection(tools.values());
+    }
+
+    /** {@link ToolCatalog#all()}：SPI 同名方法，复用 {@link #getAllTools()}。 */
+    @Override
+    public Collection<BaseTool<?>> all() {
+        return getAllTools();
     }
 
     /**

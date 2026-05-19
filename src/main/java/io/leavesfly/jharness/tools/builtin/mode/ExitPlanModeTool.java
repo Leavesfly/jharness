@@ -4,8 +4,8 @@ import io.leavesfly.jharness.tools.ToolResult;
 import io.leavesfly.jharness.tools.BaseTool;
 
 import io.leavesfly.jharness.config.Settings;
-import io.leavesfly.jharness.capability.permission.PermissionChecker;
 import io.leavesfly.jharness.capability.permission.PermissionMode;
+import io.leavesfly.jharness.kernel.spi.PermissionGate;
 import io.leavesfly.jharness.tools.input.mode.ExitPlanModeToolInput;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -51,12 +51,12 @@ public class ExitPlanModeTool extends BaseTool<ExitPlanModeToolInput> {
                 }
                 EnterPlanModeTool.clearPlan();
                 settings.setPermissionMode("default");
-                // 同步运行时 PermissionChecker，避免 Settings 与真实鉴权状态漂移。
-                PermissionChecker checker = context != null ? context.getPermissionChecker() : null;
+                // 同步运行时权限闸门，避免 Settings 与真实鉴权状态漂移。
+                PermissionGate checker = context != null ? context.getPermissionChecker() : null;
                 if (checker != null) {
                     checker.setMode(PermissionMode.DEFAULT);
                 } else {
-                    logger.warn("退出 Plan Mode 时未拿到运行时 PermissionChecker，模式切换可能未生效");
+                    logger.warn("退出 Plan Mode 时未拿到运行时 PermissionGate，模式切换可能未生效");
                 }
                 return ToolResult.success("已退出计划模式，恢复到默认模式。" + planSummary);
             } catch (Exception e) {

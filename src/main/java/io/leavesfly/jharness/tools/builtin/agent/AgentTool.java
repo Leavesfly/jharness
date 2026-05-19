@@ -12,8 +12,8 @@ import io.leavesfly.jharness.kernel.engine.model.TextBlock;
 import io.leavesfly.jharness.kernel.engine.stream.AssistantTextDelta;
 import io.leavesfly.jharness.kernel.engine.stream.AssistantTurnComplete;
 import io.leavesfly.jharness.kernel.engine.stream.StreamEvent;
-import io.leavesfly.jharness.integration.api.LlmProvider;
-import io.leavesfly.jharness.capability.permission.PermissionChecker;
+import io.leavesfly.jharness.kernel.spi.LlmGateway;
+import io.leavesfly.jharness.kernel.spi.PermissionGate;
 import io.leavesfly.jharness.tools.input.agent.AgentToolInput;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -35,10 +35,10 @@ public class AgentTool extends BaseTool<AgentToolInput> {
     private static final Logger logger = LoggerFactory.getLogger(AgentTool.class);
 
     private final BackgroundTaskManager taskManager;
-    /** 用于 in_process 模式，共享父级 LLM 客户端和工具集。 */
-    private LlmProvider sharedProvider;
+    /** 用于 in_process 模式，共享父级 LLM 客户端和工具集（依赖 SPI 接口，避免反向引用 integration/capability 包）。 */
+    private LlmGateway sharedProvider;
     private ToolRegistry sharedToolRegistry;
-    private PermissionChecker sharedPermissionChecker;
+    private PermissionGate sharedPermissionChecker;
 
     public AgentTool(BackgroundTaskManager taskManager) {
         this.taskManager = taskManager;
@@ -47,8 +47,8 @@ public class AgentTool extends BaseTool<AgentToolInput> {
     /**
      * 注入 in_process 模式所需的共享资源（由 JHarnessApplication 在组装时调用）。
      */
-    public void configureInProcess(LlmProvider provider, ToolRegistry toolRegistry,
-                                   PermissionChecker permissionChecker) {
+    public void configureInProcess(LlmGateway provider, ToolRegistry toolRegistry,
+                                   PermissionGate permissionChecker) {
         this.sharedProvider = provider;
         this.sharedToolRegistry = toolRegistry;
         this.sharedPermissionChecker = permissionChecker;

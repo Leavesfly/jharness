@@ -1,6 +1,6 @@
 package io.leavesfly.jharness;
 
-import io.leavesfly.jharness.command.commands.builtin.session.SessionTranscript;
+import io.leavesfly.jharness.command.builtin.session.SessionTranscript;
 import io.leavesfly.jharness.kernel.engine.model.ConversationMessage;
 import io.leavesfly.jharness.kernel.engine.model.MessageRole;
 import org.junit.jupiter.api.Test;

@@ -1,8 +1,8 @@
 package io.leavesfly.jharness.ui.tui;
 
-import io.leavesfly.jharness.command.commands.CommandContext;
-import io.leavesfly.jharness.command.commands.CommandRegistry;
-import io.leavesfly.jharness.command.commands.SlashCommand;
+import io.leavesfly.jharness.command.CommandContext;
+import io.leavesfly.jharness.command.CommandRegistry;
+import io.leavesfly.jharness.command.SlashCommand;
 import io.leavesfly.jharness.kernel.engine.CostTracker;
 import io.leavesfly.jharness.kernel.engine.QueryEngine;
 import io.leavesfly.jharness.kernel.engine.stream.AssistantTextDelta;
@@ -10,7 +10,7 @@ import io.leavesfly.jharness.kernel.engine.stream.AssistantTurnComplete;
 import io.leavesfly.jharness.kernel.engine.stream.StreamEvent;
 import io.leavesfly.jharness.kernel.engine.stream.ToolExecutionCompleted;
 import io.leavesfly.jharness.kernel.engine.stream.ToolExecutionStarted;
-import io.leavesfly.jharness.capability.permission.PermissionChecker;
+import io.leavesfly.jharness.kernel.spi.PermissionGate;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -198,9 +198,9 @@ public class ConsoleInteractiveSession {
                 var optionalCmd = commandRegistry.lookup(input);
                 if (optionalCmd.isPresent()) {
                     try {
-                        // /permissions、/plan 等命令通过 CommandContext 拿到运行时 PermissionChecker，
+                        // /permissions、/plan 等命令通过 CommandContext 拿到运行时权限闸门，
                         // 才能把切模式同步到真实实例。从 queryEngine 反向获取，避免为 null。
-                        PermissionChecker runtimeChecker =
+                        PermissionGate runtimeChecker =
                                 (queryEngine != null) ? queryEngine.getPermissionChecker() : null;
                         CommandContext ctx = new CommandContext(
                                 java.nio.file.Paths.get(System.getProperty("user.dir")),

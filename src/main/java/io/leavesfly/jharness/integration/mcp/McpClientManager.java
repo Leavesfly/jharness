@@ -1,8 +1,8 @@
 package io.leavesfly.jharness.integration.mcp;
 
-import io.leavesfly.jharness.capability.permission.PermissionChecker;
 import io.leavesfly.jharness.capability.permission.PermissionDecision;
 import io.leavesfly.jharness.integration.mcp.session.HttpMcpSession;
+import io.leavesfly.jharness.kernel.spi.PermissionGate;
 import io.leavesfly.jharness.integration.mcp.session.McpExecutorFactory;
 import io.leavesfly.jharness.integration.mcp.session.McpSession;
 import io.leavesfly.jharness.integration.mcp.session.StdioMcpSession;
@@ -41,15 +41,17 @@ public class McpClientManager {
     private final OkHttpClient sharedHttpClient;
 
     /**
-     * 可选的 PermissionChecker。注入后，stdio 类型的 MCP 服务器在 fork 子进程前
-     * 会先走权限评估，避免通过 MCP 配置绕过命令黑名单。
+     * 可选的权限闸门（依赖 {@link PermissionGate} SPI 而非具体实现，
+     * 由 P0-2 引入以消除 integration → capability 的反向依赖）。
+     * 注入后，stdio 类型的 MCP 服务器在 fork 子进程前会先走权限评估，
+     * 避免通过 MCP 配置绕过命令黑名单。
      */
-    private volatile PermissionChecker permissionChecker;
+    private volatile PermissionGate permissionChecker;
 
     /**
-     * 注入 PermissionChecker，使 stdio MCP 服务器与前台工具共用同一套安全栅栏。
+     * 注入权限闸门，使 stdio MCP 服务器与前台工具共用同一套安全栅栏。
      */
-    public void setPermissionChecker(PermissionChecker permissionChecker) {
+    public void setPermissionChecker(PermissionGate permissionChecker) {
         this.permissionChecker = permissionChecker;
     }
 
@@ -154,9 +156,10 @@ public class McpClientManager {
         Map<String, String> env = (Map<String, String>) config.get("env");
         String cwd = (String) config.get("cwd");
 
-        // 对 stdio MCP 的启动命令走 PermissionChecker。拼成完整命令行用于黑名单匹配，
-        // 防止通过 mcpServers 配置写入 "rm -rf /" 类命令绕过 bash 工具黑名单。
-        PermissionChecker checker = permissionChecker;
+        // 对 stdio MCP 的启动命令走权限闸门（P0-2 后依赖 PermissionGate SPI）。
+        // 拼成完整命令行用于黑名单匹配，防止通过 mcpServers 配置写入 "rm -rf /" 类命令
+        // 绕过 bash 工具黑名单。
+        PermissionGate checker = permissionChecker;
         if (checker != null) {
             StringBuilder full = new StringBuilder(command == null ? "" : command);
             for (String a : args) {

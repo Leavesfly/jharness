@@ -1,7 +1,8 @@
 package io.leavesfly.jharness;
 
 import io.leavesfly.jharness.capability.hook.HookEvent;
-import io.leavesfly.jharness.command.commands.CommandRegistry;
+import io.leavesfly.jharness.command.CommandRegistry;
+import io.leavesfly.jharness.command.PluginSlashCommand;
 import io.leavesfly.jharness.config.Settings;
 import io.leavesfly.jharness.kernel.engine.MessageCompactionService;
 import io.leavesfly.jharness.kernel.engine.TokenEstimator;
@@ -232,26 +233,26 @@ class JHarnessImprovementsTest {
     @Test
     void pluginSlashCommandRendersTemplatePlaceholders() {
         assertEquals("hello alice bob",
-                io.leavesfly.jharness.command.commands.PluginSlashCommand.renderTemplate(
+                PluginSlashCommand.renderTemplate(
                         "hello $ARGUMENTS", List.of("alice", "bob")));
         assertEquals("run: alice bob",
-                io.leavesfly.jharness.command.commands.PluginSlashCommand.renderTemplate(
+                PluginSlashCommand.renderTemplate(
                         "run: {{args}}", List.of("alice", "bob")));
         // $1 / $2 按位置替换
         assertEquals("from=alice to=bob",
-                io.leavesfly.jharness.command.commands.PluginSlashCommand.renderTemplate(
+                PluginSlashCommand.renderTemplate(
                         "from=$1 to=$2", List.of("alice", "bob")));
         // 越界占位符替换为空串
         assertEquals("a=alice b=",
-                io.leavesfly.jharness.command.commands.PluginSlashCommand.renderTemplate(
+                PluginSlashCommand.renderTemplate(
                         "a=$1 b=$2", List.of("alice")));
         // 空 args + 无占位符
         assertEquals("no args here",
-                io.leavesfly.jharness.command.commands.PluginSlashCommand.renderTemplate(
+                PluginSlashCommand.renderTemplate(
                         "no args here", List.of()));
         // null 安全
         assertEquals("",
-                io.leavesfly.jharness.command.commands.PluginSlashCommand.renderTemplate(
+                PluginSlashCommand.renderTemplate(
                         null, null));
     }
 

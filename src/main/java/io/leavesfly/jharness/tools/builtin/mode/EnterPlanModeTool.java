@@ -5,8 +5,8 @@ import io.leavesfly.jharness.tools.BaseTool;
 
 import io.leavesfly.jharness.config.Settings;
 import io.leavesfly.jharness.kernel.plan.ExecutionPlan;
-import io.leavesfly.jharness.capability.permission.PermissionChecker;
 import io.leavesfly.jharness.capability.permission.PermissionMode;
+import io.leavesfly.jharness.kernel.spi.PermissionGate;
 import io.leavesfly.jharness.tools.input.mode.EnterPlanModeToolInput;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -57,13 +57,13 @@ public class EnterPlanModeTool extends BaseTool<EnterPlanModeToolInput> {
         return CompletableFuture.supplyAsync(() -> {
             try {
                 settings.setPermissionMode("plan");
-                // 模式切换必须同步到运行时 PermissionChecker，否则即使改了 Settings，
+                // 模式切换必须同步到运行时权限闸门，否则即使改了 Settings，
                 // 工具执行链用的仍是旧模式，写操作依然能通过。
-                PermissionChecker checker = context != null ? context.getPermissionChecker() : null;
+                PermissionGate checker = context != null ? context.getPermissionChecker() : null;
                 if (checker != null) {
                     checker.setMode(PermissionMode.PLAN);
                 } else {
-                    logger.warn("进入 Plan Mode 时未拿到运行时 PermissionChecker，模式切换可能未生效");
+                    logger.warn("进入 Plan Mode 时未拿到运行时 PermissionGate，模式切换可能未生效");
                 }
                 activePlan = new ExecutionPlan();
                 logger.info("已进入 Plan Mode，创建新的执行计划");

@@ -1,8 +1,6 @@
 package io.leavesfly.jharness.kernel.engine;
 
-import io.leavesfly.jharness.capability.permission.PermissionChecker;
 import io.leavesfly.jharness.integration.api.ApiMessageCompleteEvent;
-import io.leavesfly.jharness.integration.api.LlmProvider;
 import io.leavesfly.jharness.integration.api.OpenAiApiClient;
 import io.leavesfly.jharness.kernel.engine.hooks.HookEmitterBridge;
 import io.leavesfly.jharness.kernel.engine.model.*;
@@ -11,6 +9,8 @@ import io.leavesfly.jharness.kernel.engine.tools.PlanModeInterceptor;
 import io.leavesfly.jharness.kernel.engine.tools.PlanStepRunner;
 import io.leavesfly.jharness.kernel.engine.tools.ToolCallDispatcher;
 import io.leavesfly.jharness.kernel.plan.ExecutionPlan;
+import io.leavesfly.jharness.kernel.spi.LlmGateway;
+import io.leavesfly.jharness.kernel.spi.PermissionGate;
 import io.leavesfly.jharness.tools.ToolRegistry;
 import io.leavesfly.jharness.tools.builtin.mode.EnterPlanModeTool;
 import org.slf4j.Logger;
@@ -41,13 +41,15 @@ public class QueryEngine implements AutoCloseable {
      * 占用提前扣减，避免超长 CLAUDE.md 把压缩触发时机拖到超出 API 上下文。
      */
     private volatile MessageCompactionService compactionService = new MessageCompactionService();
-    private final LlmProvider apiClient;
+    /** LLM 网关（依赖 {@link LlmGateway} SPI 而非 integration.api 具体实现）。 */
+    private final LlmGateway apiClient;
     /**
      * ToolRegistry 可替换（带 setter），便于 UI/上层在 MCP 动态工具刷新后无需重建 engine。
      * 多线程场景下通过 volatile 保证可见性。
      */
     private volatile ToolRegistry toolRegistry;
-    private final PermissionChecker permissionChecker;
+    /** 权限闸门（依赖 {@link PermissionGate} SPI 而非 capability 具体实现）。 */
+    private final PermissionGate permissionChecker;
     private volatile Path cwd;
     private final String systemPrompt;
     private final int maxTurns;
@@ -75,16 +77,16 @@ public class QueryEngine implements AutoCloseable {
      * 构造函数（兼容旧签名）。
      */
     public QueryEngine(OpenAiApiClient apiClient, ToolRegistry toolRegistry,
-                       PermissionChecker permissionChecker, Path cwd,
+                       PermissionGate permissionChecker, Path cwd,
                        String systemPrompt, int maxTurns) {
-        this((LlmProvider) apiClient, toolRegistry, permissionChecker, cwd, systemPrompt, maxTurns);
+        this((LlmGateway) apiClient, toolRegistry, permissionChecker, cwd, systemPrompt, maxTurns);
     }
 
     /**
-     * 构造函数：支持任意 {@link LlmProvider} 实现。
+     * 构造函数：支持任意 {@link LlmGateway} 实现。
      */
-    public QueryEngine(LlmProvider apiClient, ToolRegistry toolRegistry,
-                       PermissionChecker permissionChecker, Path cwd,
+    public QueryEngine(LlmGateway apiClient, ToolRegistry toolRegistry,
+                       PermissionGate permissionChecker, Path cwd,
                        String systemPrompt, int maxTurns) {
         this.apiClient = apiClient;
         this.toolRegistry = toolRegistry;
@@ -280,10 +282,10 @@ public class QueryEngine implements AutoCloseable {
     }
 
     /**
-     * 暴露运行时 PermissionChecker 给 TUI / CLI 的命令处理器，
+     * 暴露运行时权限闸门给 TUI / CLI 的命令处理器，
      * 让 /plan、/permissions 等命令能把模式切换同步到真正在工作的实例上。
      */
-    public PermissionChecker getPermissionChecker() {
+    public PermissionGate getPermissionChecker() {
         return permissionChecker;
     }
 

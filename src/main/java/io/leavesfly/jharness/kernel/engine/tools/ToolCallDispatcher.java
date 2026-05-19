@@ -2,16 +2,16 @@ package io.leavesfly.jharness.kernel.engine.tools;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import io.leavesfly.jharness.capability.permission.PermissionChecker;
 import io.leavesfly.jharness.capability.permission.PermissionDecision;
 import io.leavesfly.jharness.kernel.engine.model.ToolResultBlock;
 import io.leavesfly.jharness.kernel.engine.model.ToolUseBlock;
 import io.leavesfly.jharness.kernel.engine.stream.StreamEvent;
 import io.leavesfly.jharness.kernel.engine.stream.ToolExecutionCompleted;
 import io.leavesfly.jharness.kernel.engine.stream.ToolExecutionStarted;
+import io.leavesfly.jharness.kernel.spi.PermissionGate;
+import io.leavesfly.jharness.kernel.spi.ToolCatalog;
 import io.leavesfly.jharness.tools.BaseTool;
 import io.leavesfly.jharness.tools.ToolExecutionContext;
-import io.leavesfly.jharness.tools.ToolRegistry;
 import io.leavesfly.jharness.tools.ToolResult;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -47,12 +47,12 @@ public final class ToolCallDispatcher {
     private static final ObjectMapper MAPPER = new ObjectMapper();
     private static final long PARALLEL_TIMEOUT_MINUTES = 5;
 
-    private final Supplier<ToolRegistry> toolRegistrySupplier;
-    private final PermissionChecker permissionChecker;
+    private final Supplier<? extends ToolCatalog> toolRegistrySupplier;
+    private final PermissionGate permissionChecker;
     private final Supplier<Path> cwdSupplier;
 
-    public ToolCallDispatcher(Supplier<ToolRegistry> toolRegistrySupplier,
-                              PermissionChecker permissionChecker,
+    public ToolCallDispatcher(Supplier<? extends ToolCatalog> toolRegistrySupplier,
+                              PermissionGate permissionChecker,
                               Supplier<Path> cwdSupplier) {
         this.toolRegistrySupplier = toolRegistrySupplier;
         this.permissionChecker = permissionChecker;

@@ -21,7 +21,7 @@ import java.util.function.Consumer;
  * - 实现 {@link AutoCloseable} 以便统一释放底层连接池/线程池资源；
  * - {@link #getProviderName()} / {@link #getModelName()} 用于日志和成本统计。
  */
-public interface LlmProvider extends AutoCloseable {
+public interface LlmProvider extends io.leavesfly.jharness.kernel.spi.LlmGateway {
 
     /**
      * 向 LLM 流式发送对话并接收响应。
