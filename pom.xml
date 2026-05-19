@@ -32,13 +32,46 @@
         <junit.version>5.10.2</junit.version>
         <mockito.version>5.11.0</mockito.version>
         <okhttp-mockwebserver.version>4.12.0</okhttp-mockwebserver.version>
+        <archunit.version>1.3.0</archunit.version>
 
         <!-- 插件版本 -->
         <maven-compiler-plugin.version>3.12.1</maven-compiler-plugin.version>
         <maven-surefire-plugin.version>3.2.5</maven-surefire-plugin.version>
         <maven-shade-plugin.version>3.5.2</maven-shade-plugin.version>
+        <maven-enforcer-plugin.version>3.4.1</maven-enforcer-plugin.version>
         <spotless-maven-plugin.version>2.43.0</spotless-maven-plugin.version>
     </properties>
+
+    <!--
+      通过 dependencyManagement 锁定传递依赖的 Kotlin stdlib 版本到 1.9.10，
+      解决 okhttp 4.12.0 / okhttp-sse 4.12.0 与 okio-jvm 3.6.0 之间
+      kotlin-stdlib-jdk8 版本分裂（1.8.21 vs 1.9.10）导致
+      enforcer dependencyConvergence 失败的问题。
+    -->
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>org.jetbrains.kotlin</groupId>
+                <artifactId>kotlin-stdlib-jdk8</artifactId>
+                <version>1.9.10</version>
+            </dependency>
+            <dependency>
+                <groupId>org.jetbrains.kotlin</groupId>
+                <artifactId>kotlin-stdlib-jdk7</artifactId>
+                <version>1.9.10</version>
+            </dependency>
+            <dependency>
+                <groupId>org.jetbrains.kotlin</groupId>
+                <artifactId>kotlin-stdlib</artifactId>
+                <version>1.9.10</version>
+            </dependency>
+            <dependency>
+                <groupId>org.jetbrains.kotlin</groupId>
+                <artifactId>kotlin-stdlib-common</artifactId>
+                <version>1.9.10</version>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
 
     <dependencies>
         <!-- Jackson JSON 处理 -->
@@ -157,6 +190,14 @@
             <version>${okhttp-mockwebserver.version}</version>
             <scope>test</scope>
         </dependency>
+
+        <!-- 架构守卫：固化分层依赖方向（第 5 步引入） -->
+        <dependency>
+            <groupId>com.tngtech.archunit</groupId>
+            <artifactId>archunit-junit5</artifactId>
+            <version>${archunit.version}</version>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>
@@ -185,6 +226,34 @@
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
                 <version>${maven-surefire-plugin.version}</version>
+            </plugin>
+
+            <!-- 依赖治理：禁止 jar 循环依赖、强制 Java/Maven 版本（第 5 步引入） -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-enforcer-plugin</artifactId>
+                <version>${maven-enforcer-plugin.version}</version>
+                <executions>
+                    <execution>
+                        <id>enforce-architecture-baseline</id>
+                        <goals>
+                            <goal>enforce</goal>
+                        </goals>
+                        <configuration>
+                            <rules>
+                                <requireJavaVersion>
+                                    <version>[17,)</version>
+                                </requireJavaVersion>
+                                <requireMavenVersion>
+                                    <version>[3.6.3,)</version>
+                                </requireMavenVersion>
+                                <dependencyConvergence/>
+                                <banDuplicatePomDependencyVersions/>
+                            </rules>
+                            <fail>true</fail>
+                        </configuration>
+                    </execution>
+                </executions>
             </plugin>
 
             <!-- 打包插件（生成包含所有依赖的 fat jar） -->
