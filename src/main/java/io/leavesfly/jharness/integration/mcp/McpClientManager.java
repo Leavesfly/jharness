@@ -1,23 +1,26 @@
 package io.leavesfly.jharness.integration.mcp;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import io.leavesfly.jharness.integration.mcp.types.McpConnectionStatus;
 import io.leavesfly.jharness.capability.permission.PermissionChecker;
 import io.leavesfly.jharness.capability.permission.PermissionDecision;
-import io.leavesfly.jharness.util.JacksonUtils;
+import io.leavesfly.jharness.integration.mcp.session.HttpMcpSession;
+import io.leavesfly.jharness.integration.mcp.session.McpExecutorFactory;
+import io.leavesfly.jharness.integration.mcp.session.McpSession;
+import io.leavesfly.jharness.integration.mcp.session.StdioMcpSession;
+import io.leavesfly.jharness.integration.mcp.types.McpConnectionStatus;
 import io.leavesfly.jharness.util.UrlSafetyValidator;
-import okhttp3.*;
+import okhttp3.OkHttpClient;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.BufferedReader;
-import java.io.IOException;
-import java.io.InputStreamReader;
-import java.nio.charset.StandardCharsets;
-import java.util.*;
-import java.util.concurrent.*;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -28,33 +31,12 @@ import java.util.concurrent.atomic.AtomicInteger;
  */
 public class McpClientManager {
     private static final Logger logger = LoggerFactory.getLogger(McpClientManager.class);
-    private static final ObjectMapper MAPPER = JacksonUtils.MAPPER;
 
     private final Map<String, Map<String, Object>> serverConfigs = new ConcurrentHashMap<>();
     private final Map<String, McpConnectionStatus> statuses = new ConcurrentHashMap<>();
     private final Map<String, McpSession> sessions = new ConcurrentHashMap<>();
-    /**
-     * 改造点：
-     * - newCachedThreadPool 无上限，高并发 MCP 场景可能拉爆线程数。这里改为有界线程池 +
-     *   命名 ThreadFactory + 拒绝策略，避免线程爆炸，同时便于 jstack 定位 MCP 相关线程。
-     */
-    private final ExecutorService executor = new ThreadPoolExecutor(
-            2,
-            Math.max(8, Runtime.getRuntime().availableProcessors() * 2),
-            60L, java.util.concurrent.TimeUnit.SECONDS,
-            new java.util.concurrent.LinkedBlockingQueue<>(64),
-            new java.util.concurrent.ThreadFactory() {
-                private final java.util.concurrent.atomic.AtomicInteger counter = new java.util.concurrent.atomic.AtomicInteger();
-                @Override
-                public Thread newThread(Runnable r) {
-                    Thread t = new Thread(r, "jharness-mcp-" + counter.incrementAndGet());
-                    t.setDaemon(true);
-                    t.setUncaughtExceptionHandler((thread, ex) ->
-                            logger.error("MCP 线程未捕获异常: {}", thread.getName(), ex));
-                    return t;
-                }
-            },
-            new java.util.concurrent.ThreadPoolExecutor.CallerRunsPolicy());
+    /** 有界线程池 + 命名 ThreadFactory，详见 {@link McpExecutorFactory}。 */
+    private final ExecutorService executor = McpExecutorFactory.newDefault();
     private final AtomicInteger requestIdCounter = new AtomicInteger(0);
     private final OkHttpClient sharedHttpClient;
 
@@ -73,8 +55,8 @@ public class McpClientManager {
 
     public McpClientManager() {
         this.sharedHttpClient = new OkHttpClient.Builder()
-                .connectTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
-                .readTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
+                .connectTimeout(30, TimeUnit.SECONDS)
+                .readTimeout(60, TimeUnit.SECONDS)
                 // SSRF 防护：禁止跟随重定向，避免 302 到内网地址绕过 URL 校验
                 .followRedirects(false)
                 .followSslRedirects(false)
@@ -106,11 +88,8 @@ public class McpClientManager {
                 .whenComplete((v, err) -> fireConnectedListeners());
     }
 
-    /**
-     * 连接完成监听器列表。使用 CopyOnWriteArrayList 保证并发读写安全。
-     */
-    private final List<Runnable> connectedListeners =
-            new java.util.concurrent.CopyOnWriteArrayList<>();
+    /** 连接完成监听器列表。CopyOnWriteArrayList 保证并发读写安全。 */
+    private final List<Runnable> connectedListeners = new CopyOnWriteArrayList<>();
 
     /**
      * 注册"连接完成"监听器。{@link #connectAll()} 完成后（无论成功/失败）都会回调。
@@ -168,6 +147,7 @@ public class McpClientManager {
     /**
      * 连接 stdio 类型的 MCP 服务器
      */
+    @SuppressWarnings("unchecked")
     private void connectStdio(String name, Map<String, Object> config) throws Exception {
         String command = (String) config.get("command");
         List<String> args = (List<String>) config.getOrDefault("args", Collections.emptyList());
@@ -190,32 +170,30 @@ public class McpClientManager {
             }
         }
 
-        // 构建进程
         ProcessBuilder pb = new ProcessBuilder();
         List<String> cmd = new ArrayList<>();
         cmd.add(command);
         cmd.addAll(args);
         pb.command(cmd);
-        
+
         if (env != null) {
             pb.environment().putAll(env);
         }
         if (cwd != null) {
             pb.directory(new java.io.File(cwd));
         }
-        
+
         pb.redirectErrorStream(true);
         Process process = pb.start();
-        
+
         try {
-            // 创建会话
-            McpSession session = new StdioMcpSession(process, name);
+            McpSession session = new StdioMcpSession(process, name, requestIdCounter);
             session.initialize();
-            
-            // 发现工具和资源
+
             List<McpConnectionStatus.McpToolInfo> tools = session.listTools();
             List<McpConnectionStatus.McpResourceInfo> resources = session.listResources();
-            
+
+
             sessions.put(name, session);
             statuses.put(name, new McpConnectionStatus("connected", "stdio", null,
                 env != null && !env.isEmpty(), tools, resources));
@@ -253,7 +231,7 @@ public class McpClientManager {
             throw new IllegalArgumentException("MCP HTTP 服务器 URL 不安全: " + safetyError);
         }
 
-        HttpMcpSession session = new HttpMcpSession(sharedHttpClient, url, headers, name);
+        HttpMcpSession session = new HttpMcpSession(sharedHttpClient, url, headers, name, requestIdCounter);
         session.initialize();
 
         List<McpConnectionStatus.McpToolInfo> tools = session.listTools();
@@ -424,484 +402,5 @@ public class McpClientManager {
         // 第三步：关闭共享 HTTP 客户端，释放连接池和线程
         sharedHttpClient.dispatcher().executorService().shutdown();
         sharedHttpClient.connectionPool().evictAll();
-    }
-    
-    /**
-     * MCP 会话接口
-     */
-    private interface McpSession {
-        void initialize() throws Exception;
-        List<McpConnectionStatus.McpToolInfo> listTools() throws Exception;
-        List<McpConnectionStatus.McpResourceInfo> listResources() throws Exception;
-        String callTool(String toolName, Map<String, Object> arguments) throws Exception;
-        String readResource(String uri) throws Exception;
-        void close() throws Exception;
-    }
-    
-    /**
-     * stdio MCP 会话实现
-     *
-     * 改进点（P0）：
-     * - 不再合并 stderr 到 stdout（上层已经设置了 redirectErrorStream=true，但仅用于调试日志导出），
-     *   避免 stderr 中的非 JSON 日志干扰响应解析导致死锁；
-     * - 读响应使用带超时的轮询机制，一旦进程退出或 stdout 长时间无数据立即返回错误；
-     * - 单独的 stderr 消费线程，防止子进程 stderr 缓冲区满导致管道阻塞（当前 redirectErrorStream=true 场景不启用）。
-     */
-    private class StdioMcpSession implements McpSession {
-        /** 单次 readResponse 的最大等待时间（秒）。 */
-        private static final int READ_RESPONSE_TIMEOUT_SECONDS = 30;
-
-        private final Process process;
-        private final String serverName;
-        private final BufferedReader reader;
-        private final java.io.OutputStream writer;
-
-        StdioMcpSession(Process process, String serverName) {
-            this.process = process;
-            this.serverName = serverName;
-            this.reader = new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8));
-            this.writer = process.getOutputStream();
-        }
-        
-        @Override
-        public void initialize() throws Exception {
-            // 发送 initialize 请求
-            ObjectNode request = MAPPER.createObjectNode();
-            request.put("jsonrpc", "2.0");
-            request.put("id", requestIdCounter.incrementAndGet());
-            request.put("method", "initialize");
-            
-            ObjectNode params = MAPPER.createObjectNode();
-            ObjectNode caps = MAPPER.createObjectNode();
-            caps.set("roots", MAPPER.createObjectNode());
-            caps.set("sampling", MAPPER.createObjectNode());
-            params.set("capabilities", caps);
-            params.put("protocolVersion", "2024-11-05");
-            
-            ObjectNode clientInfo = MAPPER.createObjectNode();
-            clientInfo.put("name", "JHarness");
-            clientInfo.put("version", "0.1.0");
-            params.set("clientInfo", clientInfo);
-            
-            request.set("params", params);
-            
-            sendRequest(request);
-            
-            // 读取响应
-            String response = readResponse();
-            logger.debug("Initialize 响应: {}", response);
-            
-            // 发送 initialized 通知
-            ObjectNode initialized = MAPPER.createObjectNode();
-            initialized.put("jsonrpc", "2.0");
-            initialized.put("method", "notifications/initialized");
-            sendRequest(initialized);
-        }
-        
-        @Override
-        public List<McpConnectionStatus.McpToolInfo> listTools() throws Exception {
-            ObjectNode request = createJsonRpcRequest("tools/list");
-            sendRequest(request);
-            String response = readResponse();
-            
-            JsonNode json = MAPPER.readTree(response);
-            JsonNode toolsNode = json.path("result").path("tools");
-            
-            List<McpConnectionStatus.McpToolInfo> tools = new ArrayList<>();
-            if (toolsNode.isArray()) {
-                for (JsonNode tool : toolsNode) {
-                    String name = tool.path("name").asText();
-                    String description = tool.path("description").asText("");
-                    Map<String, Object> inputSchema = MAPPER.convertValue(
-                        tool.path("inputSchema"), Map.class);
-                    
-                    tools.add(new McpConnectionStatus.McpToolInfo(
-                        serverName, name, description, inputSchema));
-                }
-            }
-            return tools;
-        }
-        
-        @Override
-        public List<McpConnectionStatus.McpResourceInfo> listResources() throws Exception {
-            ObjectNode request = createJsonRpcRequest("resources/list");
-            sendRequest(request);
-            String response = readResponse();
-            
-            JsonNode json = MAPPER.readTree(response);
-            JsonNode resourcesNode = json.path("result").path("resources");
-            
-            List<McpConnectionStatus.McpResourceInfo> resources = new ArrayList<>();
-            if (resourcesNode.isArray()) {
-                for (JsonNode resource : resourcesNode) {
-                    String uri = resource.path("uri").asText();
-                    String name = resource.path("name").asText(uri);
-                    String description = resource.path("description").asText("");
-                    
-                    resources.add(new McpConnectionStatus.McpResourceInfo(
-                        serverName, name, uri, description));
-                }
-            }
-            return resources;
-        }
-        
-        @Override
-        public String callTool(String toolName, Map<String, Object> arguments) throws Exception {
-            ObjectNode request = createJsonRpcRequest("tools/call");
-            ObjectNode params = MAPPER.createObjectNode();
-            params.put("name", toolName);
-            params.set("arguments", MAPPER.valueToTree(arguments));
-            request.set("params", params);
-            
-            sendRequest(request);
-            String response = readResponse();
-            
-            JsonNode json = MAPPER.readTree(response);
-            JsonNode contentNode = json.path("result").path("content");
-            
-            List<String> parts = new ArrayList<>();
-            if (contentNode.isArray()) {
-                for (JsonNode content : contentNode) {
-                    if ("text".equals(content.path("type").asText())) {
-                        parts.add(content.path("text").asText());
-                    } else {
-                        parts.add(content.toString());
-                    }
-                }
-            }
-            
-            if (parts.isEmpty()) {
-                return "(无输出)";
-            }
-            return String.join("\n", parts);
-        }
-        
-        @Override
-        public String readResource(String uri) throws Exception {
-            ObjectNode request = createJsonRpcRequest("resources/read");
-            ObjectNode params = MAPPER.createObjectNode();
-            params.put("uri", uri);
-            request.set("params", params);
-            
-            sendRequest(request);
-            String response = readResponse();
-            
-            JsonNode json = MAPPER.readTree(response);
-            JsonNode contentsNode = json.path("result").path("contents");
-            
-            List<String> parts = new ArrayList<>();
-            if (contentsNode.isArray()) {
-                for (JsonNode content : contentsNode) {
-                    if (content.has("text")) {
-                        parts.add(content.path("text").asText());
-                    } else if (content.has("blob")) {
-                        parts.add(content.path("blob").asText());
-                    }
-                }
-            }
-            
-            if (parts.isEmpty()) {
-                return "(无内容)";
-            }
-            return String.join("\n", parts);
-        }
-        
-        @Override
-        public void close() throws Exception {
-            if (process.isAlive()) {
-                process.destroy();
-            }
-        }
-        
-        private ObjectNode createJsonRpcRequest(String method) {
-            ObjectNode request = MAPPER.createObjectNode();
-            request.put("jsonrpc", "2.0");
-            request.put("id", requestIdCounter.incrementAndGet());
-            request.put("method", method);
-            return request;
-        }
-        
-        private void sendRequest(ObjectNode request) throws IOException {
-            String json = MAPPER.writeValueAsString(request) + "\n";
-            writer.write(json.getBytes(StandardCharsets.UTF_8));
-            writer.flush();
-        }
-        
-        /**
-         * 读取 JSON-RPC 响应（带超时和字符串/转义感知）
-         *
-         * 改进点（P0-S9）：
-         * - 通过 ready() 轮询 + sleep，保证在 READ_RESPONSE_TIMEOUT_SECONDS 秒内无新数据时返回超时异常，
-         *   避免 reader.readLine() 永久阻塞；
-         * - 识别字符串字面量和转义字符，不再把字符串里的花括号当作 JSON 结构的一部分，
-         *   防止响应包含含 "{" / "}" 的文本时误判；
-         * - 若子进程已退出，立即抛异常终止等待。
-         */
-        private String readResponse() throws IOException {
-            StringBuilder sb = new StringBuilder();
-            int braceDepth = 0;
-            boolean started = false;
-            boolean inString = false;
-            boolean escaped = false;
-
-            long deadline = System.nanoTime()
-                    + java.util.concurrent.TimeUnit.SECONDS.toNanos(READ_RESPONSE_TIMEOUT_SECONDS);
-
-            while (true) {
-                if (System.nanoTime() > deadline) {
-                    throw new IOException("MCP 服务器响应超时（>"
-                            + READ_RESPONSE_TIMEOUT_SECONDS + "s）: " + serverName);
-                }
-                if (!reader.ready()) {
-                    if (!process.isAlive()) {
-                        throw new IOException("MCP 服务器进程已退出: " + serverName);
-                    }
-                    try {
-                        Thread.sleep(20);
-                    } catch (InterruptedException ie) {
-                        Thread.currentThread().interrupt();
-                        throw new IOException("读取 MCP 响应被中断", ie);
-                    }
-                    continue;
-                }
-
-                String line = reader.readLine();
-                if (line == null) {
-                    // EOF
-                    break;
-                }
-                if (!started && line.trim().isEmpty()) {
-                    continue;
-                }
-
-                sb.append(line);
-
-                for (int i = 0; i < line.length(); i++) {
-                    char ch = line.charAt(i);
-                    if (escaped) {
-                        escaped = false;
-                        continue;
-                    }
-                    if (ch == '\\') {
-                        escaped = true;
-                        continue;
-                    }
-                    if (ch == '"') {
-                        inString = !inString;
-                        continue;
-                    }
-                    if (inString) {
-                        continue;
-                    }
-                    if (ch == '{') {
-                        braceDepth++;
-                        started = true;
-                    } else if (ch == '}') {
-                        braceDepth--;
-                    }
-                }
-
-                if (started && braceDepth == 0) {
-                    break;
-                }
-            }
-
-            if (sb.length() == 0) {
-                throw new IOException("MCP 服务器未返回响应");
-            }
-            return sb.toString();
-        }
-    }
-
-    /**
-     * HTTP MCP 会话实现
-     *
-     * 通过 HTTP POST 发送 JSON-RPC 请求到 MCP 服务器。
-     */
-    private class HttpMcpSession implements McpSession {
-        private final OkHttpClient httpClient;
-        private final String baseUrl;
-        private final Map<String, String> headers;
-        private final String serverName;
-
-        HttpMcpSession(OkHttpClient httpClient, String baseUrl,
-                       Map<String, String> headers, String serverName) {
-            this.httpClient = httpClient;
-            this.baseUrl = baseUrl;
-            this.headers = headers != null ? headers : Collections.emptyMap();
-            this.serverName = serverName;
-        }
-
-        @Override
-        public void initialize() throws Exception {
-            ObjectNode request = MAPPER.createObjectNode();
-            request.put("jsonrpc", "2.0");
-            request.put("id", requestIdCounter.incrementAndGet());
-            request.put("method", "initialize");
-
-            ObjectNode params = MAPPER.createObjectNode();
-            ObjectNode caps = MAPPER.createObjectNode();
-            caps.set("roots", MAPPER.createObjectNode());
-            params.set("capabilities", caps);
-            params.put("protocolVersion", "2024-11-05");
-
-            ObjectNode clientInfo = MAPPER.createObjectNode();
-            clientInfo.put("name", "JHarness");
-            clientInfo.put("version", "0.1.0");
-            params.set("clientInfo", clientInfo);
-            request.set("params", params);
-
-            String response = sendHttpRequest(request);
-            logger.debug("HTTP Initialize 响应: {}", response);
-
-            ObjectNode initialized = MAPPER.createObjectNode();
-            initialized.put("jsonrpc", "2.0");
-            initialized.put("method", "notifications/initialized");
-            sendHttpRequest(initialized);
-        }
-
-        @Override
-        @SuppressWarnings("unchecked")
-        public List<McpConnectionStatus.McpToolInfo> listTools() throws Exception {
-            ObjectNode request = createJsonRpcRequest("tools/list");
-            String response = sendHttpRequest(request);
-
-            JsonNode json = MAPPER.readTree(response);
-            JsonNode toolsNode = json.path("result").path("tools");
-
-            List<McpConnectionStatus.McpToolInfo> tools = new ArrayList<>();
-            if (toolsNode.isArray()) {
-                for (JsonNode tool : toolsNode) {
-                    String name = tool.path("name").asText();
-                    String description = tool.path("description").asText("");
-                    Map<String, Object> inputSchema = MAPPER.convertValue(
-                            tool.path("inputSchema"), Map.class);
-                    tools.add(new McpConnectionStatus.McpToolInfo(
-                            serverName, name, description, inputSchema));
-                }
-            }
-            return tools;
-        }
-
-        @Override
-        public List<McpConnectionStatus.McpResourceInfo> listResources() throws Exception {
-            ObjectNode request = createJsonRpcRequest("resources/list");
-            String response = sendHttpRequest(request);
-
-            JsonNode json = MAPPER.readTree(response);
-            JsonNode resourcesNode = json.path("result").path("resources");
-
-            List<McpConnectionStatus.McpResourceInfo> resources = new ArrayList<>();
-            if (resourcesNode.isArray()) {
-                for (JsonNode resource : resourcesNode) {
-                    String uri = resource.path("uri").asText();
-                    String name = resource.path("name").asText(uri);
-                    String description = resource.path("description").asText("");
-                    resources.add(new McpConnectionStatus.McpResourceInfo(
-                            serverName, name, uri, description));
-                }
-            }
-            return resources;
-        }
-
-        @Override
-        public String callTool(String toolName, Map<String, Object> arguments) throws Exception {
-            ObjectNode request = createJsonRpcRequest("tools/call");
-            ObjectNode params = MAPPER.createObjectNode();
-            params.put("name", toolName);
-            params.set("arguments", MAPPER.valueToTree(arguments));
-            request.set("params", params);
-
-            String response = sendHttpRequest(request);
-            JsonNode json = MAPPER.readTree(response);
-            JsonNode contentNode = json.path("result").path("content");
-
-            List<String> parts = new ArrayList<>();
-            if (contentNode.isArray()) {
-                for (JsonNode content : contentNode) {
-                    if ("text".equals(content.path("type").asText())) {
-                        parts.add(content.path("text").asText());
-                    } else {
-                        parts.add(content.toString());
-                    }
-                }
-            }
-            return parts.isEmpty() ? "(无输出)" : String.join("\n", parts);
-        }
-
-        @Override
-        public String readResource(String uri) throws Exception {
-            ObjectNode request = createJsonRpcRequest("resources/read");
-            ObjectNode params = MAPPER.createObjectNode();
-            params.put("uri", uri);
-            request.set("params", params);
-
-            String response = sendHttpRequest(request);
-            JsonNode json = MAPPER.readTree(response);
-            JsonNode contentsNode = json.path("result").path("contents");
-
-            List<String> parts = new ArrayList<>();
-            if (contentsNode.isArray()) {
-                for (JsonNode content : contentsNode) {
-                    if (content.has("text")) {
-                        parts.add(content.path("text").asText());
-                    } else if (content.has("blob")) {
-                        parts.add(content.path("blob").asText());
-                    }
-                }
-            }
-            return parts.isEmpty() ? "(无内容)" : String.join("\n", parts);
-        }
-
-        @Override
-        public void close() {
-            // HTTP 连接无需显式关闭
-        }
-
-        private ObjectNode createJsonRpcRequest(String method) {
-            ObjectNode request = MAPPER.createObjectNode();
-            request.put("jsonrpc", "2.0");
-            request.put("id", requestIdCounter.incrementAndGet());
-            request.put("method", method);
-            return request;
-        }
-
-        /** MCP HTTP 响应体上限：16 MB，避免恶意/异常服务器返回超大响应打爆内存。 */
-        private static final long MAX_RESPONSE_BODY_BYTES = 16L * 1024 * 1024;
-
-        private String sendHttpRequest(ObjectNode jsonRpcRequest) throws IOException {
-            String body = MAPPER.writeValueAsString(jsonRpcRequest);
-
-            Request.Builder requestBuilder = new Request.Builder()
-                    .url(baseUrl)
-                    .post(RequestBody.create(body, MediaType.parse("application/json")));
-
-            for (Map.Entry<String, String> header : headers.entrySet()) {
-                requestBuilder.header(header.getKey(), header.getValue());
-            }
-
-            try (Response response = httpClient.newCall(requestBuilder.build()).execute()) {
-                if (!response.isSuccessful()) {
-                    throw new IOException("MCP HTTP 请求失败: " + response.code());
-                }
-                ResponseBody responseBody = response.body();
-                if (responseBody == null) {
-                    return "{}";
-                }
-                long contentLength = responseBody.contentLength();
-                if (contentLength > MAX_RESPONSE_BODY_BYTES) {
-                    throw new IOException("MCP HTTP 响应体超过上限 "
-                            + MAX_RESPONSE_BODY_BYTES + " 字节: " + contentLength);
-                }
-                // contentLength 未知时，通过 source().request 限流读取
-                okio.BufferedSource src = responseBody.source();
-                src.request(MAX_RESPONSE_BODY_BYTES + 1);
-                okio.Buffer buf = src.getBuffer();
-                if (buf.size() > MAX_RESPONSE_BODY_BYTES) {
-                    throw new IOException("MCP HTTP 响应体超过上限: " + buf.size());
-                }
-                return buf.readString(StandardCharsets.UTF_8);
-            }
-        }
     }
 }
