@@ -9,12 +9,12 @@ import com.googlecode.lanterna.terminal.Terminal;
 import com.googlecode.lanterna.terminal.ansi.UnixTerminal;
 import io.leavesfly.jharness.command.commands.CommandContext;
 import io.leavesfly.jharness.command.commands.CommandRegistry;
-import io.leavesfly.jharness.core.engine.QueryEngine;
-import io.leavesfly.jharness.core.engine.stream.AssistantTextDelta;
-import io.leavesfly.jharness.core.engine.stream.AssistantTurnComplete;
-import io.leavesfly.jharness.core.engine.stream.StreamEvent;
-import io.leavesfly.jharness.core.engine.stream.ToolExecutionCompleted;
-import io.leavesfly.jharness.core.engine.stream.ToolExecutionStarted;
+import io.leavesfly.jharness.kernel.engine.QueryEngine;
+import io.leavesfly.jharness.kernel.engine.stream.AssistantTextDelta;
+import io.leavesfly.jharness.kernel.engine.stream.AssistantTurnComplete;
+import io.leavesfly.jharness.kernel.engine.stream.StreamEvent;
+import io.leavesfly.jharness.kernel.engine.stream.ToolExecutionCompleted;
+import io.leavesfly.jharness.kernel.engine.stream.ToolExecutionStarted;
 import io.leavesfly.jharness.capability.permission.PermissionChecker;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -246,7 +246,7 @@ public class TerminalUI {
      * /plan 命令：查看当前执行计划
      */
     private void handlePlanCommand() {
-        io.leavesfly.jharness.core.plan.ExecutionPlan plan =
+        io.leavesfly.jharness.kernel.plan.ExecutionPlan plan =
                 io.leavesfly.jharness.tools.EnterPlanModeTool.getActivePlan();
         if (plan == null) {
             addSystemMessage("当前不在 Plan Mode 中。使用 enter_plan_mode 工具进入。");
@@ -263,7 +263,7 @@ public class TerminalUI {
      * /approve 命令：批准单个步骤并执行所有已批准步骤
      */
     private void handleApproveCommand(String args) {
-        io.leavesfly.jharness.core.plan.ExecutionPlan plan =
+        io.leavesfly.jharness.kernel.plan.ExecutionPlan plan =
                 io.leavesfly.jharness.tools.EnterPlanModeTool.getActivePlan();
         if (plan == null) {
             addSystemMessage("当前不在 Plan Mode 中。");
@@ -290,7 +290,7 @@ public class TerminalUI {
      * /approve_all 命令：批准所有待定步骤并执行
      */
     private void handleApproveAllCommand() {
-        io.leavesfly.jharness.core.plan.ExecutionPlan plan =
+        io.leavesfly.jharness.kernel.plan.ExecutionPlan plan =
                 io.leavesfly.jharness.tools.EnterPlanModeTool.getActivePlan();
         if (plan == null) {
             addSystemMessage("当前不在 Plan Mode 中。");
@@ -308,7 +308,7 @@ public class TerminalUI {
     /**
      * 执行已批准的计划步骤
      */
-    private void executeApprovedSteps(io.leavesfly.jharness.core.plan.ExecutionPlan plan) {
+    private void executeApprovedSteps(io.leavesfly.jharness.kernel.plan.ExecutionPlan plan) {
         if (queryEngine == null) {
             addSystemMessage("⚠ QueryEngine 未初始化。");
             return;

@@ -1,7 +1,7 @@
 package io.leavesfly.jharness.extension.plugins;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import io.leavesfly.jharness.core.Settings;
+import io.leavesfly.jharness.config.Settings;
 import io.leavesfly.jharness.extension.skills.SkillDefinition;
 import io.leavesfly.jharness.extension.skills.SkillLoader;
 import io.leavesfly.jharness.util.JacksonUtils;

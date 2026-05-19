@@ -2,13 +2,13 @@ package io.leavesfly.jharness;
 
 import io.leavesfly.jharness.capability.coordination.TeamRegistry;
 import io.leavesfly.jharness.command.commands.CommandRegistry;
-import io.leavesfly.jharness.core.Settings;
+import io.leavesfly.jharness.config.Settings;
 import io.leavesfly.jharness.capability.permission.PermissionChecker;
 import io.leavesfly.jharness.capability.permission.PermissionMode;
-import io.leavesfly.jharness.core.engine.CostTracker;
-import io.leavesfly.jharness.core.engine.model.ConversationMessage;
-import io.leavesfly.jharness.core.engine.model.UsageSnapshot;
-import io.leavesfly.jharness.core.MemoryManager;
+import io.leavesfly.jharness.kernel.engine.CostTracker;
+import io.leavesfly.jharness.kernel.engine.model.ConversationMessage;
+import io.leavesfly.jharness.kernel.engine.model.UsageSnapshot;
+import io.leavesfly.jharness.memory.MemoryManager;
 import io.leavesfly.jharness.capability.session.SessionSnapshot;
 import io.leavesfly.jharness.capability.session.SessionStorage;
 import io.leavesfly.jharness.capability.task.BackgroundTaskManager;

@@ -2,12 +2,12 @@ package io.leavesfly.jharness.tools;
 
 import io.leavesfly.jharness.capability.task.BackgroundTaskManager;
 import io.leavesfly.jharness.capability.task.TaskRecord;
-import io.leavesfly.jharness.core.engine.QueryEngine;
-import io.leavesfly.jharness.core.engine.model.ConversationMessage;
-import io.leavesfly.jharness.core.engine.model.TextBlock;
-import io.leavesfly.jharness.core.engine.stream.AssistantTextDelta;
-import io.leavesfly.jharness.core.engine.stream.AssistantTurnComplete;
-import io.leavesfly.jharness.core.engine.stream.StreamEvent;
+import io.leavesfly.jharness.kernel.engine.QueryEngine;
+import io.leavesfly.jharness.kernel.engine.model.ConversationMessage;
+import io.leavesfly.jharness.kernel.engine.model.TextBlock;
+import io.leavesfly.jharness.kernel.engine.stream.AssistantTextDelta;
+import io.leavesfly.jharness.kernel.engine.stream.AssistantTurnComplete;
+import io.leavesfly.jharness.kernel.engine.stream.StreamEvent;
 import io.leavesfly.jharness.integration.api.LlmProvider;
 import io.leavesfly.jharness.capability.permission.PermissionChecker;
 import io.leavesfly.jharness.tools.input.AgentToolInput;

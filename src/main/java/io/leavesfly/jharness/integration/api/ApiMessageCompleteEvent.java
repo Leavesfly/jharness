@@ -1,7 +1,7 @@
 package io.leavesfly.jharness.integration.api;
 
-import io.leavesfly.jharness.core.engine.model.ToolUseBlock;
-import io.leavesfly.jharness.core.engine.model.UsageSnapshot;
+import io.leavesfly.jharness.kernel.engine.model.ToolUseBlock;
+import io.leavesfly.jharness.kernel.engine.model.UsageSnapshot;
 
 import java.util.List;
 

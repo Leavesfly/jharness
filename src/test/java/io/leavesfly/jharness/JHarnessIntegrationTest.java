@@ -1,6 +1,6 @@
 package io.leavesfly.jharness;
 
-import io.leavesfly.jharness.core.Settings;
+import io.leavesfly.jharness.config.Settings;
 import io.leavesfly.jharness.capability.permission.PermissionChecker;
 import io.leavesfly.jharness.capability.permission.PermissionMode;
 import io.leavesfly.jharness.tools.*;

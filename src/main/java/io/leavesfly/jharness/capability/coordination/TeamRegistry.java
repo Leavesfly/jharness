@@ -1,6 +1,6 @@
 package io.leavesfly.jharness.capability.coordination;
 
-import io.leavesfly.jharness.core.engine.stream.StreamEvent;
+import io.leavesfly.jharness.kernel.engine.stream.StreamEvent;
 
 import java.time.Instant;
 import java.util.ArrayList;

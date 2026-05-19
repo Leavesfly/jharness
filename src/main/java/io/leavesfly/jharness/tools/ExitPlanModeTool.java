@@ -1,6 +1,6 @@
 package io.leavesfly.jharness.tools;
 
-import io.leavesfly.jharness.core.Settings;
+import io.leavesfly.jharness.config.Settings;
 import io.leavesfly.jharness.capability.permission.PermissionChecker;
 import io.leavesfly.jharness.capability.permission.PermissionMode;
 import io.leavesfly.jharness.tools.input.ExitPlanModeToolInput;
@@ -41,7 +41,7 @@ public class ExitPlanModeTool extends BaseTool<ExitPlanModeToolInput> {
         return CompletableFuture.supplyAsync(() -> {
             try {
                 // 退出时检查是否有未执行的计划
-                io.leavesfly.jharness.core.plan.ExecutionPlan plan = EnterPlanModeTool.getActivePlan();
+                io.leavesfly.jharness.kernel.plan.ExecutionPlan plan = EnterPlanModeTool.getActivePlan();
                 String planSummary = "";
                 if (plan != null && plan.hasPendingWork()) {
                     planSummary = "\n⚠ 注意：有未执行的计划步骤被丢弃：\n" + plan.toSummary();

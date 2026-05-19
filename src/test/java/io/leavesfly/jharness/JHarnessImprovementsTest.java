@@ -2,9 +2,9 @@ package io.leavesfly.jharness;
 
 import io.leavesfly.jharness.capability.hook.HookEvent;
 import io.leavesfly.jharness.command.commands.CommandRegistry;
-import io.leavesfly.jharness.core.Settings;
-import io.leavesfly.jharness.core.engine.MessageCompactionService;
-import io.leavesfly.jharness.core.engine.TokenEstimator;
+import io.leavesfly.jharness.config.Settings;
+import io.leavesfly.jharness.kernel.engine.MessageCompactionService;
+import io.leavesfly.jharness.kernel.engine.TokenEstimator;
 import io.leavesfly.jharness.integration.cron.CronRegistry;
 import io.leavesfly.jharness.integration.mcp.McpClientManager;
 import io.leavesfly.jharness.capability.session.SessionSnapshot;

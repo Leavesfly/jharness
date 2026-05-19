@@ -1,6 +1,6 @@
 package io.leavesfly.jharness.command.keybindings;
 
-import io.leavesfly.jharness.core.Settings;
+import io.leavesfly.jharness.config.Settings;
 
 import java.io.IOException;
 import java.nio.file.Files;

@@ -1,6 +1,6 @@
 package io.leavesfly.jharness.command.commands;
 
-import io.leavesfly.jharness.core.engine.stream.StreamEvent;
+import io.leavesfly.jharness.kernel.engine.stream.StreamEvent;
 
 import java.util.List;
 import java.util.concurrent.CompletableFuture;

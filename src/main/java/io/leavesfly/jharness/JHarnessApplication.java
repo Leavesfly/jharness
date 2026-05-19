@@ -6,21 +6,21 @@ import io.leavesfly.jharness.capability.hook.HookRegistry;
 import io.leavesfly.jharness.extension.plugins.LoadedPlugin;
 import io.leavesfly.jharness.extension.plugins.PluginLoader;
 import io.leavesfly.jharness.integration.api.OpenAiApiClient;
-import io.leavesfly.jharness.core.Settings;
-import io.leavesfly.jharness.core.SettingsBootstrap;
+import io.leavesfly.jharness.config.Settings;
+import io.leavesfly.jharness.config.SettingsBootstrap;
 import io.leavesfly.jharness.capability.coordination.TeamRegistry;
-import io.leavesfly.jharness.core.engine.QueryEngine;
-import io.leavesfly.jharness.core.engine.model.ConversationMessage;
-import io.leavesfly.jharness.core.engine.stream.AssistantTextDelta;
-import io.leavesfly.jharness.core.engine.stream.AssistantTurnComplete;
-import io.leavesfly.jharness.core.engine.stream.StreamEvent;
-import io.leavesfly.jharness.core.engine.stream.ToolExecutionStarted;
-import io.leavesfly.jharness.core.engine.stream.ToolExecutionCompleted;
-import io.leavesfly.jharness.core.engine.stream.UsageReport;
+import io.leavesfly.jharness.kernel.engine.QueryEngine;
+import io.leavesfly.jharness.kernel.engine.model.ConversationMessage;
+import io.leavesfly.jharness.kernel.engine.stream.AssistantTextDelta;
+import io.leavesfly.jharness.kernel.engine.stream.AssistantTurnComplete;
+import io.leavesfly.jharness.kernel.engine.stream.StreamEvent;
+import io.leavesfly.jharness.kernel.engine.stream.ToolExecutionStarted;
+import io.leavesfly.jharness.kernel.engine.stream.ToolExecutionCompleted;
+import io.leavesfly.jharness.kernel.engine.stream.UsageReport;
 import io.leavesfly.jharness.integration.mcp.McpClientManager;
 import io.leavesfly.jharness.capability.permission.PermissionChecker;
 import io.leavesfly.jharness.capability.permission.PermissionMode;
-import io.leavesfly.jharness.prompts.SystemPromptBuilder;
+import io.leavesfly.jharness.prompt.SystemPromptBuilder;
 import io.leavesfly.jharness.integration.cron.CronRegistry;
 import io.leavesfly.jharness.extension.skills.SkillRegistry;
 import io.leavesfly.jharness.capability.task.BackgroundTaskManager;
@@ -342,17 +342,17 @@ public class JHarnessApplication implements Callable<Integer> {
         int userBudget = settings.getMessageCompactionTokenBudget();
         int userMaxMessages = settings.getMessageCompactionMaxMessages();
         if (userBudget > 0 || userMaxMessages > 0) {
-            io.leavesfly.jharness.core.engine.MessageCompactionService svc =
-                    new io.leavesfly.jharness.core.engine.MessageCompactionService(
+            io.leavesfly.jharness.kernel.engine.MessageCompactionService svc =
+                    new io.leavesfly.jharness.kernel.engine.MessageCompactionService(
                             userMaxMessages > 0 ? userMaxMessages : 20,
                             5,
                             userBudget > 0 ? userBudget : 32_000);
-            int sysTokens = io.leavesfly.jharness.core.engine.TokenEstimator.estimateText(systemPrompt);
+            int sysTokens = io.leavesfly.jharness.kernel.engine.TokenEstimator.estimateText(systemPrompt);
             engine.setCompactionService(svc.withSystemPromptTokens(sysTokens));
         } else {
-            int sysTokens = io.leavesfly.jharness.core.engine.TokenEstimator.estimateText(systemPrompt);
+            int sysTokens = io.leavesfly.jharness.kernel.engine.TokenEstimator.estimateText(systemPrompt);
             engine.setCompactionService(
-                    new io.leavesfly.jharness.core.engine.MessageCompactionService()
+                    new io.leavesfly.jharness.kernel.engine.MessageCompactionService()
                             .withSystemPromptTokens(sysTokens));
         }
 
@@ -766,10 +766,10 @@ public class JHarnessApplication implements Callable<Integer> {
             // 取最后一条 assistant 消息的文本作为 output（尽力而为）
             String answer = "";
             for (var m : queryEngine.getMessages()) {
-                if (m.getRole() == io.leavesfly.jharness.core.engine.model.MessageRole.ASSISTANT) {
+                if (m.getRole() == io.leavesfly.jharness.kernel.engine.model.MessageRole.ASSISTANT) {
                     StringBuilder sb = new StringBuilder();
                     for (var b : m.getContent()) {
-                        if (b instanceof io.leavesfly.jharness.core.engine.model.TextBlock t) {
+                        if (b instanceof io.leavesfly.jharness.kernel.engine.model.TextBlock t) {
                             sb.append(t.getText());
                         }
                     }

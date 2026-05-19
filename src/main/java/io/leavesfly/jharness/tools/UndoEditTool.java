@@ -1,7 +1,7 @@
 package io.leavesfly.jharness.tools;
 
-import io.leavesfly.jharness.core.edit.EditHistoryManager;
-import io.leavesfly.jharness.core.edit.EditRecord;
+import io.leavesfly.jharness.kernel.edit.EditHistoryManager;
+import io.leavesfly.jharness.kernel.edit.EditRecord;
 import io.leavesfly.jharness.tools.input.UndoEditToolInput;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

@@ -1,7 +1,7 @@
 package io.leavesfly.jharness.tools;
 
-import io.leavesfly.jharness.core.Settings;
-import io.leavesfly.jharness.core.plan.ExecutionPlan;
+import io.leavesfly.jharness.config.Settings;
+import io.leavesfly.jharness.kernel.plan.ExecutionPlan;
 import io.leavesfly.jharness.capability.permission.PermissionChecker;
 import io.leavesfly.jharness.capability.permission.PermissionMode;
 import io.leavesfly.jharness.tools.input.EnterPlanModeToolInput;

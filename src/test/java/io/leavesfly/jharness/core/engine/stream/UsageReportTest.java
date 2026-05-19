@@ -1,4 +1,4 @@
-package io.leavesfly.jharness.core.engine.stream;
+package io.leavesfly.jharness.kernel.engine.stream;
 
 import org.junit.jupiter.api.Test;
 

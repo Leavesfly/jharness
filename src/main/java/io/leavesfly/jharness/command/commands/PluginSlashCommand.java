@@ -1,6 +1,6 @@
 package io.leavesfly.jharness.command.commands;
 
-import io.leavesfly.jharness.core.engine.stream.StreamEvent;
+import io.leavesfly.jharness.kernel.engine.stream.StreamEvent;
 import io.leavesfly.jharness.extension.skills.SkillDefinition;
 
 import java.util.List;
@@ -13,7 +13,7 @@ import java.util.regex.Pattern;
  * 由 plugin 的 {@code commands/*.md} 注册而成的 slash command。
  *
  * <p>对齐 Claude Code 的 plugin slash command 语义：把 Markdown 正文作为 prompt 模板，
- * 用户输入的 args 会按占位符注入后作为一次新的用户消息提交给 {@link io.leavesfly.jharness.core.engine.QueryEngine}。
+ * 用户输入的 args 会按占位符注入后作为一次新的用户消息提交给 {@link io.leavesfly.jharness.kernel.engine.QueryEngine}。
  *
  * <h3>占位符规则（尽量与 Claude Code 规范保持一致）</h3>
  * <ul>

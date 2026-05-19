@@ -4,7 +4,7 @@ import io.leavesfly.jharness.command.commands.CommandContext;
 import io.leavesfly.jharness.command.commands.CommandResult;
 import io.leavesfly.jharness.command.commands.SimpleSlashCommand;
 import io.leavesfly.jharness.command.commands.SlashCommand;
-import io.leavesfly.jharness.core.Settings;
+import io.leavesfly.jharness.config.Settings;
 import io.leavesfly.jharness.integration.mcp.McpClientManager;
 import io.leavesfly.jharness.integration.mcp.types.McpConnectionStatus;
 

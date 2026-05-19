@@ -2,13 +2,13 @@ package io.leavesfly.jharness.command.commands;
 
 import io.leavesfly.jharness.command.commands.handlers.*;
 
-import io.leavesfly.jharness.core.Settings;
+import io.leavesfly.jharness.config.Settings;
 import io.leavesfly.jharness.capability.coordination.AgentOrchestrator;
 import io.leavesfly.jharness.capability.coordination.TeamRegistry;
-import io.leavesfly.jharness.core.engine.QueryEngine;
+import io.leavesfly.jharness.kernel.engine.QueryEngine;
 import io.leavesfly.jharness.capability.hook.HookRegistry;
 import io.leavesfly.jharness.integration.mcp.McpClientManager;
-import io.leavesfly.jharness.core.MemoryManager;
+import io.leavesfly.jharness.memory.MemoryManager;
 import io.leavesfly.jharness.integration.cron.CronRegistry;
 import io.leavesfly.jharness.capability.session.SessionStorage;
 import io.leavesfly.jharness.tools.ToolRegistry;
@@ -87,8 +87,8 @@ public class CommandRegistry {
         register(cmd("exit", "退出程序", (a, c, e) -> CompletableFuture.completedFuture(CommandResult.success("exit"))));
         register(cmd("clear", "清空历史", (a, c, e) -> CompletableFuture.completedFuture(CommandResult.success("clear"))));
         register(cmd("status", "会话状态", (args, ctx, ec) -> {
-            io.leavesfly.jharness.core.engine.QueryEngine engine = ctx.getEngine();
-            io.leavesfly.jharness.core.Settings settings = ctx.getSettings();
+            io.leavesfly.jharness.kernel.engine.QueryEngine engine = ctx.getEngine();
+            io.leavesfly.jharness.config.Settings settings = ctx.getSettings();
             int msgCount = engine != null ? engine.getMessages().size() : 0;
             String usage;
             if (engine != null && engine.getCostTracker() != null) {

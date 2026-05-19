@@ -2,8 +2,8 @@ package io.leavesfly.jharness.capability.session;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
-import io.leavesfly.jharness.core.engine.model.ConversationMessage;
-import io.leavesfly.jharness.core.engine.model.UsageSnapshot;
+import io.leavesfly.jharness.kernel.engine.model.ConversationMessage;
+import io.leavesfly.jharness.kernel.engine.model.UsageSnapshot;
 
 import java.time.Instant;
 import java.util.List;

@@ -3,7 +3,7 @@ package io.leavesfly.jharness.command.commands.handlers;
 import io.leavesfly.jharness.command.commands.CommandResult;
 import io.leavesfly.jharness.command.commands.SimpleSlashCommand;
 import io.leavesfly.jharness.command.commands.SlashCommand;
-import io.leavesfly.jharness.core.Settings;
+import io.leavesfly.jharness.config.Settings;
 
 import java.util.List;
 import java.util.concurrent.CompletableFuture;

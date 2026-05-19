@@ -3,7 +3,7 @@ package io.leavesfly.jharness.command.commands.handlers;
 import io.leavesfly.jharness.command.commands.CommandResult;
 import io.leavesfly.jharness.command.commands.SimpleSlashCommand;
 import io.leavesfly.jharness.command.commands.SlashCommand;
-import io.leavesfly.jharness.core.engine.QueryEngine;
+import io.leavesfly.jharness.kernel.engine.QueryEngine;
 
 import java.nio.file.Path;
 import java.nio.file.Paths;

@@ -1,11 +1,11 @@
 package io.leavesfly.jharness.capability.coordination;
 
-import io.leavesfly.jharness.core.engine.QueryEngine;
+import io.leavesfly.jharness.kernel.engine.QueryEngine;
 import io.leavesfly.jharness.tools.ToolRegistry;
-import io.leavesfly.jharness.core.engine.model.ConversationMessage;
-import io.leavesfly.jharness.core.engine.stream.AssistantTextDelta;
-import io.leavesfly.jharness.core.engine.stream.StreamEvent;
-import io.leavesfly.jharness.core.engine.stream.ToolExecutionCompleted;
+import io.leavesfly.jharness.kernel.engine.model.ConversationMessage;
+import io.leavesfly.jharness.kernel.engine.stream.AssistantTextDelta;
+import io.leavesfly.jharness.kernel.engine.stream.StreamEvent;
+import io.leavesfly.jharness.kernel.engine.stream.ToolExecutionCompleted;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

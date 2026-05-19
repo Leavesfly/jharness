@@ -1,7 +1,7 @@
 package io.leavesfly.jharness.tools;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import io.leavesfly.jharness.core.engine.model.ToolResultBlock;
+import io.leavesfly.jharness.kernel.engine.model.ToolResultBlock;
 
 /**
  * 工具执行结果
