@@ -9,8 +9,8 @@ import io.leavesfly.jharness.command.commands.SimpleSlashCommand;
 import io.leavesfly.jharness.core.engine.CostTracker;
 import io.leavesfly.jharness.core.engine.QueryEngine;
 import io.leavesfly.jharness.core.engine.model.*;
-import io.leavesfly.jharness.session.sessions.SessionSnapshot;
-import io.leavesfly.jharness.session.sessions.SessionStorage;
+import io.leavesfly.jharness.capability.session.SessionSnapshot;
+import io.leavesfly.jharness.capability.session.SessionStorage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

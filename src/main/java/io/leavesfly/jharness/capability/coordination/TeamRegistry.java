@@ -1,4 +1,4 @@
-package io.leavesfly.jharness.agent.coordinator;
+package io.leavesfly.jharness.capability.coordination;
 
 import io.leavesfly.jharness.core.engine.stream.StreamEvent;
 

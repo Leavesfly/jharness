@@ -2,7 +2,7 @@ package io.leavesfly.jharness.core;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import io.leavesfly.jharness.session.permissions.PermissionMode;
+import io.leavesfly.jharness.capability.permission.PermissionMode;
 import io.leavesfly.jharness.util.JacksonUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

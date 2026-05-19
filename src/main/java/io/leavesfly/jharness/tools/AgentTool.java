@@ -1,7 +1,7 @@
 package io.leavesfly.jharness.tools;
 
-import io.leavesfly.jharness.agent.tasks.BackgroundTaskManager;
-import io.leavesfly.jharness.agent.tasks.TaskRecord;
+import io.leavesfly.jharness.capability.task.BackgroundTaskManager;
+import io.leavesfly.jharness.capability.task.TaskRecord;
 import io.leavesfly.jharness.core.engine.QueryEngine;
 import io.leavesfly.jharness.core.engine.model.ConversationMessage;
 import io.leavesfly.jharness.core.engine.model.TextBlock;
@@ -9,7 +9,7 @@ import io.leavesfly.jharness.core.engine.stream.AssistantTextDelta;
 import io.leavesfly.jharness.core.engine.stream.AssistantTurnComplete;
 import io.leavesfly.jharness.core.engine.stream.StreamEvent;
 import io.leavesfly.jharness.integration.api.LlmProvider;
-import io.leavesfly.jharness.session.permissions.PermissionChecker;
+import io.leavesfly.jharness.capability.permission.PermissionChecker;
 import io.leavesfly.jharness.tools.input.AgentToolInput;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

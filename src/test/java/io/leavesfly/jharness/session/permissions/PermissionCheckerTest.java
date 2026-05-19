@@ -1,4 +1,4 @@
-package io.leavesfly.jharness.session.permissions;
+package io.leavesfly.jharness.capability.permission;
 
 import org.junit.jupiter.api.Test;
 

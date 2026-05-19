@@ -15,7 +15,7 @@ import io.leavesfly.jharness.core.engine.stream.AssistantTurnComplete;
 import io.leavesfly.jharness.core.engine.stream.StreamEvent;
 import io.leavesfly.jharness.core.engine.stream.ToolExecutionCompleted;
 import io.leavesfly.jharness.core.engine.stream.ToolExecutionStarted;
-import io.leavesfly.jharness.session.permissions.PermissionChecker;
+import io.leavesfly.jharness.capability.permission.PermissionChecker;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

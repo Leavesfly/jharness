@@ -1,4 +1,4 @@
-package io.leavesfly.jharness.session.sessions;
+package io.leavesfly.jharness.capability.session;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jdk8.Jdk8Module;

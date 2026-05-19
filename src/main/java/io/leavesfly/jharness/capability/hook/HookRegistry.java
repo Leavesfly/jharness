@@ -1,4 +1,4 @@
-package io.leavesfly.jharness.agent.hooks;
+package io.leavesfly.jharness.capability.hook;
 
 import java.util.ArrayList;
 import java.util.HashMap;

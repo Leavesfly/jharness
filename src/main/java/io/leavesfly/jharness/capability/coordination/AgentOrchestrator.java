@@ -1,4 +1,4 @@
-package io.leavesfly.jharness.agent.coordinator;
+package io.leavesfly.jharness.capability.coordination;
 
 import io.leavesfly.jharness.core.engine.QueryEngine;
 import io.leavesfly.jharness.tools.ToolRegistry;
@@ -73,7 +73,7 @@ public class AgentOrchestrator {
     }
 
     /**
-     * 注入 Hook 发射器（{@code io.leavesfly.jharness.agent.hooks.HookExecutor}），
+     * 注入 Hook 发射器（{@code io.leavesfly.jharness.capability.hook.HookExecutor}），
      * 用于在子代理执行结束后发射 {@code SUBAGENT_STOP} 事件。null 表示关闭。
      */
     public void setHookEmitter(Object hookExecutor) {
@@ -88,7 +88,7 @@ public class AgentOrchestrator {
         Object emitter = this.hookEmitter;
         if (emitter == null) return;
         try {
-            Class<?> hookEventCls = Class.forName("io.leavesfly.jharness.agent.hooks.HookEvent");
+            Class<?> hookEventCls = Class.forName("io.leavesfly.jharness.capability.hook.HookEvent");
             Object eventEnum = Enum.valueOf((Class<Enum>) hookEventCls, "SUBAGENT_STOP");
             Map<String, Object> payload = new HashMap<>();
             payload.put("agent_id", agentId);

@@ -1,4 +1,4 @@
-package io.leavesfly.jharness.session.permissions;
+package io.leavesfly.jharness.capability.permission;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

@@ -3,7 +3,7 @@ package io.leavesfly.jharness.command.commands;
 import io.leavesfly.jharness.core.Settings;
 import io.leavesfly.jharness.core.engine.QueryEngine;
 import io.leavesfly.jharness.core.state.AppStateStore;
-import io.leavesfly.jharness.session.permissions.PermissionChecker;
+import io.leavesfly.jharness.capability.permission.PermissionChecker;
 import io.leavesfly.jharness.tools.ToolRegistry;
 
 import java.nio.file.Path;

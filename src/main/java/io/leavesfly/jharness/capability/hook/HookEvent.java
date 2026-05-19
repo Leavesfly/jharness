@@ -1,4 +1,4 @@
-package io.leavesfly.jharness.agent.hooks;
+package io.leavesfly.jharness.capability.hook;
 
 /**
  * 钩子事件类型枚举。

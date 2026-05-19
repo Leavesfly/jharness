@@ -3,7 +3,7 @@ package io.leavesfly.jharness.command.commands.handlers;
 import io.leavesfly.jharness.command.commands.CommandResult;
 import io.leavesfly.jharness.command.commands.SlashCommand;
 import io.leavesfly.jharness.command.commands.SimpleSlashCommand;
-import io.leavesfly.jharness.integration.CronRegistry;
+import io.leavesfly.jharness.integration.cron.CronRegistry;
 
 import java.util.List;
 import java.util.Map;

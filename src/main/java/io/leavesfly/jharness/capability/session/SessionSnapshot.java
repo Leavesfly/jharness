@@ -1,4 +1,4 @@
-package io.leavesfly.jharness.session.sessions;
+package io.leavesfly.jharness.capability.session;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;

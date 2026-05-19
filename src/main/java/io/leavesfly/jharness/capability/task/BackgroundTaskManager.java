@@ -1,7 +1,7 @@
-package io.leavesfly.jharness.agent.tasks;
+package io.leavesfly.jharness.capability.task;
 
-import io.leavesfly.jharness.session.permissions.PermissionChecker;
-import io.leavesfly.jharness.session.permissions.PermissionDecision;
+import io.leavesfly.jharness.capability.permission.PermissionChecker;
+import io.leavesfly.jharness.capability.permission.PermissionDecision;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

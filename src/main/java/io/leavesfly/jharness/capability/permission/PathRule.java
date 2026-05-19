@@ -1,4 +1,4 @@
-package io.leavesfly.jharness.session.permissions;
+package io.leavesfly.jharness.capability.permission;
 
 import java.nio.file.FileSystems;
 import java.nio.file.PathMatcher;

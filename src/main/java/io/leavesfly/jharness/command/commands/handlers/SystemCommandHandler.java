@@ -9,7 +9,7 @@ import io.leavesfly.jharness.core.engine.CostTracker;
 import io.leavesfly.jharness.core.engine.QueryEngine;
 import io.leavesfly.jharness.core.state.AppState;
 import io.leavesfly.jharness.core.state.AppStateStore;
-import io.leavesfly.jharness.agent.hooks.HookRegistry;
+import io.leavesfly.jharness.capability.hook.HookRegistry;
 import io.leavesfly.jharness.core.MemoryManager;
 import io.leavesfly.jharness.prompts.outputstyles.OutputStyle;
 import io.leavesfly.jharness.prompts.outputstyles.OutputStyleLoader;

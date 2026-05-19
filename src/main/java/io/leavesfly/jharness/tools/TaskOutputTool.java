@@ -1,6 +1,6 @@
 package io.leavesfly.jharness.tools;
 
-import io.leavesfly.jharness.agent.tasks.BackgroundTaskManager;
+import io.leavesfly.jharness.capability.task.BackgroundTaskManager;
 import io.leavesfly.jharness.tools.input.TaskOutputToolInput;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

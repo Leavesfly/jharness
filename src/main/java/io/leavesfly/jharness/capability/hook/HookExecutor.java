@@ -1,9 +1,9 @@
-package io.leavesfly.jharness.agent.hooks;
+package io.leavesfly.jharness.capability.hook;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import io.leavesfly.jharness.agent.hooks.schemas.HookDefinition;
-import io.leavesfly.jharness.session.permissions.PermissionChecker;
-import io.leavesfly.jharness.session.permissions.PermissionDecision;
+import io.leavesfly.jharness.capability.hook.schemas.HookDefinition;
+import io.leavesfly.jharness.capability.permission.PermissionChecker;
+import io.leavesfly.jharness.capability.permission.PermissionDecision;
 import io.leavesfly.jharness.util.JacksonUtils;
 import io.leavesfly.jharness.util.UrlSafetyValidator;
 import org.slf4j.Logger;

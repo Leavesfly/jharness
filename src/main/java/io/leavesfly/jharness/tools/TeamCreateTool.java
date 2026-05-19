@@ -1,8 +1,8 @@
 package io.leavesfly.jharness.tools;
 
-import io.leavesfly.jharness.agent.coordinator.TeamRecord;
+import io.leavesfly.jharness.capability.coordination.TeamRecord;
 import io.leavesfly.jharness.tools.input.TeamCreateToolInput;
-import io.leavesfly.jharness.agent.coordinator.TeamRegistry;
+import io.leavesfly.jharness.capability.coordination.TeamRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

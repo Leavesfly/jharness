@@ -1,4 +1,4 @@
-package io.leavesfly.jharness.session.permissions;
+package io.leavesfly.jharness.capability.permission;
 
 /**
  * 权限模式枚举

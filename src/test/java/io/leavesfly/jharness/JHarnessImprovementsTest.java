@@ -1,14 +1,14 @@
 package io.leavesfly.jharness;
 
-import io.leavesfly.jharness.agent.hooks.HookEvent;
+import io.leavesfly.jharness.capability.hook.HookEvent;
 import io.leavesfly.jharness.command.commands.CommandRegistry;
 import io.leavesfly.jharness.core.Settings;
 import io.leavesfly.jharness.core.engine.MessageCompactionService;
 import io.leavesfly.jharness.core.engine.TokenEstimator;
-import io.leavesfly.jharness.integration.CronRegistry;
+import io.leavesfly.jharness.integration.cron.CronRegistry;
 import io.leavesfly.jharness.integration.mcp.McpClientManager;
-import io.leavesfly.jharness.session.sessions.SessionSnapshot;
-import io.leavesfly.jharness.session.sessions.SessionStorage;
+import io.leavesfly.jharness.capability.session.SessionSnapshot;
+import io.leavesfly.jharness.capability.session.SessionStorage;
 import io.leavesfly.jharness.tools.ToolRegistry;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;

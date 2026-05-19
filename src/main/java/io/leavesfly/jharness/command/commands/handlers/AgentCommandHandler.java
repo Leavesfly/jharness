@@ -4,9 +4,9 @@ import io.leavesfly.jharness.command.commands.CommandContext;
 import io.leavesfly.jharness.command.commands.CommandResult;
 import io.leavesfly.jharness.command.commands.SimpleSlashCommand;
 import io.leavesfly.jharness.command.commands.SlashCommand;
-import io.leavesfly.jharness.agent.coordinator.AgentOrchestrator;
-import io.leavesfly.jharness.agent.coordinator.TeamRecord;
-import io.leavesfly.jharness.agent.coordinator.TeamRegistry;
+import io.leavesfly.jharness.capability.coordination.AgentOrchestrator;
+import io.leavesfly.jharness.capability.coordination.TeamRecord;
+import io.leavesfly.jharness.capability.coordination.TeamRegistry;
 
 import java.util.ArrayList;
 import java.util.List;

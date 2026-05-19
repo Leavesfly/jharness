@@ -1,14 +1,14 @@
 package io.leavesfly.jharness;
 
-import io.leavesfly.jharness.agent.hooks.HookEvent;
-import io.leavesfly.jharness.agent.hooks.HookExecutor;
-import io.leavesfly.jharness.agent.hooks.HookRegistry;
+import io.leavesfly.jharness.capability.hook.HookEvent;
+import io.leavesfly.jharness.capability.hook.HookExecutor;
+import io.leavesfly.jharness.capability.hook.HookRegistry;
 import io.leavesfly.jharness.extension.plugins.LoadedPlugin;
 import io.leavesfly.jharness.extension.plugins.PluginLoader;
 import io.leavesfly.jharness.integration.api.OpenAiApiClient;
 import io.leavesfly.jharness.core.Settings;
 import io.leavesfly.jharness.core.SettingsBootstrap;
-import io.leavesfly.jharness.agent.coordinator.TeamRegistry;
+import io.leavesfly.jharness.capability.coordination.TeamRegistry;
 import io.leavesfly.jharness.core.engine.QueryEngine;
 import io.leavesfly.jharness.core.engine.model.ConversationMessage;
 import io.leavesfly.jharness.core.engine.stream.AssistantTextDelta;
@@ -18,14 +18,14 @@ import io.leavesfly.jharness.core.engine.stream.ToolExecutionStarted;
 import io.leavesfly.jharness.core.engine.stream.ToolExecutionCompleted;
 import io.leavesfly.jharness.core.engine.stream.UsageReport;
 import io.leavesfly.jharness.integration.mcp.McpClientManager;
-import io.leavesfly.jharness.session.permissions.PermissionChecker;
-import io.leavesfly.jharness.session.permissions.PermissionMode;
+import io.leavesfly.jharness.capability.permission.PermissionChecker;
+import io.leavesfly.jharness.capability.permission.PermissionMode;
 import io.leavesfly.jharness.prompts.SystemPromptBuilder;
-import io.leavesfly.jharness.integration.CronRegistry;
+import io.leavesfly.jharness.integration.cron.CronRegistry;
 import io.leavesfly.jharness.extension.skills.SkillRegistry;
-import io.leavesfly.jharness.agent.tasks.BackgroundTaskManager;
-import io.leavesfly.jharness.session.sessions.SessionSnapshot;
-import io.leavesfly.jharness.session.sessions.SessionStorage;
+import io.leavesfly.jharness.capability.task.BackgroundTaskManager;
+import io.leavesfly.jharness.capability.session.SessionSnapshot;
+import io.leavesfly.jharness.capability.session.SessionStorage;
 import io.leavesfly.jharness.tools.AgentTool;
 import io.leavesfly.jharness.tools.BaseTool;
 import io.leavesfly.jharness.tools.ToolRegistry;
@@ -618,7 +618,7 @@ public class JHarnessApplication implements Callable<Integer> {
      * 后续由 /agents 命令 或 AgentOrchestrator 使用时可读取。
      */
     private static int registerPluginAgents(
-            io.leavesfly.jharness.agent.coordinator.TeamRegistry teamRegistry,
+            io.leavesfly.jharness.capability.coordination.TeamRegistry teamRegistry,
             List<LoadedPlugin> plugins) {
         if (teamRegistry == null || plugins == null || plugins.isEmpty()) return 0;
         int added = 0;
@@ -630,7 +630,7 @@ public class JHarnessApplication implements Callable<Integer> {
                     logger.warn("插件 {} 的 agent {} 与已存在团队重名，跳过", plugin.getName(), def.getName());
                     continue;
                 }
-                io.leavesfly.jharness.agent.coordinator.TeamRecord team =
+                io.leavesfly.jharness.capability.coordination.TeamRecord team =
                         teamRegistry.createTeam(def.getName(), def.getDescription());
                 team.setMetadata("source", "plugin");
                 team.setMetadata("plugin", plugin.getName());
@@ -830,10 +830,10 @@ public class JHarnessApplication implements Callable<Integer> {
      */
     private CommandRegistry buildFullCommandRegistry(QueryEngine engine, Settings settings) {
         try {
-            io.leavesfly.jharness.agent.coordinator.TeamRegistry teamRegistry =
-                    new io.leavesfly.jharness.agent.coordinator.TeamRegistry();
-            io.leavesfly.jharness.agent.coordinator.AgentOrchestrator orchestrator =
-                    new io.leavesfly.jharness.agent.coordinator.AgentOrchestrator(engine, engine.getToolRegistry());
+            io.leavesfly.jharness.capability.coordination.TeamRegistry teamRegistry =
+                    new io.leavesfly.jharness.capability.coordination.TeamRegistry();
+            io.leavesfly.jharness.capability.coordination.AgentOrchestrator orchestrator =
+                    new io.leavesfly.jharness.capability.coordination.AgentOrchestrator(engine, engine.getToolRegistry());
             McpClientManager mcpForUi = new McpClientManager();
             CronRegistry cronForUi = new CronRegistry(Settings.getDefaultDataDir());
             HookRegistry hookForUi = new HookRegistry();

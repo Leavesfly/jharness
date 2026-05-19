@@ -11,8 +11,8 @@ import io.leavesfly.jharness.core.engine.stream.ToolExecutionCompleted;
 import io.leavesfly.jharness.core.engine.stream.ToolExecutionStarted;
 import io.leavesfly.jharness.tools.EnterPlanModeTool;
 
-import io.leavesfly.jharness.session.permissions.PermissionChecker;
-import io.leavesfly.jharness.session.permissions.PermissionDecision;
+import io.leavesfly.jharness.capability.permission.PermissionChecker;
+import io.leavesfly.jharness.capability.permission.PermissionDecision;
 import io.leavesfly.jharness.tools.ToolRegistry;
 import io.leavesfly.jharness.tools.BaseTool;
 import io.leavesfly.jharness.tools.ToolResult;
@@ -181,7 +181,7 @@ public class QueryEngine implements AutoCloseable {
     /**
      * 注入可选的 Hook 发射器 + 会话 ID。
      *
-     * @param hookExecutor {@code io.leavesfly.jharness.agent.hooks.HookExecutor} 实例；null 表示关闭 Hook
+     * @param hookExecutor {@code io.leavesfly.jharness.capability.hook.HookExecutor} 实例；null 表示关闭 Hook
      * @param sessionId    会话 ID，写入 payload "session_id"
      */
     public void setHookEmitter(Object hookExecutor, String sessionId) {
@@ -200,7 +200,7 @@ public class QueryEngine implements AutoCloseable {
         Object emitter = this.hookEmitter;
         if (emitter == null) return;
         try {
-            Class<?> hookEventCls = Class.forName("io.leavesfly.jharness.agent.hooks.HookEvent");
+            Class<?> hookEventCls = Class.forName("io.leavesfly.jharness.capability.hook.HookEvent");
             Object eventEnum = Enum.valueOf((Class<Enum>) hookEventCls, eventName);
             java.util.Map<String, Object> fullPayload = new java.util.HashMap<>();
             if (sessionIdForHook != null) fullPayload.put("session_id", sessionIdForHook);

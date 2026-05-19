@@ -1,4 +1,4 @@
-package io.leavesfly.jharness.agent.hooks.schemas;
+package io.leavesfly.jharness.capability.hook.schemas;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonSubTypes;

@@ -1,8 +1,8 @@
 package io.leavesfly.jharness.tools;
 
 import io.leavesfly.jharness.core.Settings;
-import io.leavesfly.jharness.session.permissions.PermissionChecker;
-import io.leavesfly.jharness.session.permissions.PermissionMode;
+import io.leavesfly.jharness.capability.permission.PermissionChecker;
+import io.leavesfly.jharness.capability.permission.PermissionMode;
 import io.leavesfly.jharness.tools.input.EnterPlanModeToolInput;
 import io.leavesfly.jharness.tools.input.ExitPlanModeToolInput;
 import org.junit.jupiter.api.Test;

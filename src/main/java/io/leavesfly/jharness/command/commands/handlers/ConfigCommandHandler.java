@@ -5,8 +5,8 @@ import io.leavesfly.jharness.command.commands.CommandResult;
 import io.leavesfly.jharness.command.commands.SimpleSlashCommand;
 import io.leavesfly.jharness.command.commands.SlashCommand;
 import io.leavesfly.jharness.core.Settings;
-import io.leavesfly.jharness.session.permissions.PermissionChecker;
-import io.leavesfly.jharness.session.permissions.PermissionMode;
+import io.leavesfly.jharness.capability.permission.PermissionChecker;
+import io.leavesfly.jharness.capability.permission.PermissionMode;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

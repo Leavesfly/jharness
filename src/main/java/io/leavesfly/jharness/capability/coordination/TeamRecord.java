@@ -1,4 +1,4 @@
-package io.leavesfly.jharness.agent.coordinator;
+package io.leavesfly.jharness.capability.coordination;
 
 import java.time.Instant;
 import java.util.ArrayList;

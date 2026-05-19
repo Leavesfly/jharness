@@ -1,11 +1,11 @@
 package io.leavesfly.jharness.tools;
 
 import io.leavesfly.jharness.core.Settings;
-import io.leavesfly.jharness.agent.coordinator.TeamRegistry;
+import io.leavesfly.jharness.capability.coordination.TeamRegistry;
 import io.leavesfly.jharness.integration.mcp.McpClientManager;
-import io.leavesfly.jharness.integration.CronRegistry;
+import io.leavesfly.jharness.integration.cron.CronRegistry;
 import io.leavesfly.jharness.extension.skills.SkillRegistry;
-import io.leavesfly.jharness.agent.tasks.BackgroundTaskManager;
+import io.leavesfly.jharness.capability.task.BackgroundTaskManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

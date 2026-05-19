@@ -1,4 +1,4 @@
-package io.leavesfly.jharness.session.bridge;
+package io.leavesfly.jharness.integration.bridge;
 
 import org.junit.jupiter.api.Test;
 
