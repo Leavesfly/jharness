@@ -69,7 +69,7 @@ public class CommandRegistry {
 
         // 注册增强版 Hooks 命令（覆盖基础版的简易 /hooks，因为 Registry 版本提供持久化/触发等增强能力）
         if (hookRegistry != null) {
-            registry.register(SystemCommandHandler.createHooksCommandWithRegistry(hookRegistry));
+            registry.register(HooksCommand.createWithRegistry(hookRegistry));
         }
         logger.info("完整命令注册完成，共 {} 个命令", registry.size());
         return registry;
@@ -150,14 +150,14 @@ public class CommandRegistry {
         Path memoryDir = Settings.getDefaultDataDir().resolve("memories");
         MemoryManager memoryManager = new MemoryManager(memoryDir);
 
-        register(SystemCommandHandler.createMemoryCommand(memoryManager));
-        register(SystemCommandHandler.createUsageCommand());
-        register(SystemCommandHandler.createCostCommand());
-        register(SystemCommandHandler.createStatsCommand());
-        register(SystemCommandHandler.createHooksCommand());
-        register(SystemCommandHandler.createVimCommand());
-        register(SystemCommandHandler.createVoiceCommand());
-        register(SystemCommandHandler.createOutputStyleCommand());
+        register(MemoryCommand.create(memoryManager));
+        register(UsageCommand.create());
+        register(CostCommand.create());
+        register(StatsCommand.create());
+        register(HooksCommand.create());
+        register(VimCommand.create());
+        register(VoiceCommand.create());
+        register(OutputStyleCommand.create());
 
         // 扩展配置命令
         register(ConfigPlusCommandHandler.createEffortCommand());
