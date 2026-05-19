@@ -1,6 +1,6 @@
 package io.leavesfly.jharness;
 
-import io.leavesfly.jharness.command.commands.builtin.session.SessionCommandHandler;
+import io.leavesfly.jharness.command.commands.builtin.session.SessionTranscript;
 import io.leavesfly.jharness.kernel.engine.model.ConversationMessage;
 import io.leavesfly.jharness.kernel.engine.model.MessageRole;
 import org.junit.jupiter.api.Test;
@@ -26,13 +26,13 @@ class SessionCommandsTest {
                 ConversationMessage.assistantText("Fine!")
         );
 
-        List<ConversationMessage> rewound = SessionCommandHandler.rewindTurns(messages, 1);
+        List<ConversationMessage> rewound = SessionTranscript.rewindTurns(messages, 1);
         assertTrue(rewound.size() < messages.size());
     }
 
     @Test
     void testRewindTurnsEmpty() {
-        List<ConversationMessage> rewound = SessionCommandHandler.rewindTurns(List.of(), 1);
+        List<ConversationMessage> rewound = SessionTranscript.rewindTurns(List.of(), 1);
         assertTrue(rewound.isEmpty());
     }
 
@@ -49,7 +49,7 @@ class SessionCommandsTest {
                 ConversationMessage.assistantText("Response 4")
         );
 
-        List<ConversationMessage> compacted = SessionCommandHandler.compactMessages(messages, 2);
+        List<ConversationMessage> compacted = SessionTranscript.compact(messages, 2);
         assertTrue(compacted.size() <= 3);
         assertEquals(MessageRole.ASSISTANT, compacted.get(0).getRole());
     }
@@ -61,7 +61,7 @@ class SessionCommandsTest {
                 ConversationMessage.assistantText("A1")
         );
 
-        List<ConversationMessage> compacted = SessionCommandHandler.compactMessages(messages, 6);
+        List<ConversationMessage> compacted = SessionTranscript.compact(messages, 6);
         assertEquals(messages.size(), compacted.size());
     }
 
@@ -72,7 +72,7 @@ class SessionCommandsTest {
                 ConversationMessage.assistantText("Hi there!")
         );
 
-        Path outputPath = SessionCommandHandler.exportSessionMarkdown(tempDir, messages);
+        Path outputPath = SessionTranscript.exportMarkdown(tempDir, messages);
 
         assertTrue(Files.exists(outputPath));
         String content = Files.readString(outputPath);

@@ -135,16 +135,16 @@ public class CommandRegistry {
         Path sessionsDir = Settings.getDefaultDataDir().resolve("sessions");
         SessionStorage sessionStorage = new SessionStorage(sessionsDir);
 
-        register(SessionCommandHandler.createResumeCommand(sessionStorage));
-        register(SessionCommandHandler.createExportCommand());
-        register(SessionCommandHandler.createShareCommand(sessionStorage));
-        register(SessionCommandHandler.createSessionCommand(sessionStorage));
-        register(SessionCommandHandler.createTagCommand(sessionStorage));
-        register(SessionCommandHandler.createRewindCommand());
-        register(SessionCommandHandler.createCopyCommand());
-        register(SessionCommandHandler.createCompactCommand());
-        register(SessionCommandHandler.createContextCommand());
-        register(SessionCommandHandler.createSummaryCommand());
+        register(ResumeCommand.create(sessionStorage));
+        register(ExportCommand.create());
+        register(ShareCommand.create(sessionStorage));
+        register(SessionCommand.create(sessionStorage));
+        register(TagCommand.create(sessionStorage));
+        register(RewindCommand.create());
+        register(CopyCommand.create());
+        register(CompactCommand.create());
+        register(ContextCommand.create());
+        register(SummaryCommand.create());
         
         // 工具和系统命令：与项目数据目录保持一致，使用 ~/.jharness/memories
         Path memoryDir = Settings.getDefaultDataDir().resolve("memories");
