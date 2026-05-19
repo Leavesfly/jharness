@@ -188,7 +188,21 @@ public class CommandRegistry {
         register(BridgeCommandHandler.createBridgeCommand());
         
         register(cmd("feedback", "保存反馈", (a, c, e) -> CompletableFuture.completedFuture(CommandResult.success("反馈已保存"))));
-        register(cmd("onboarding", "快速入门", (a, c, e) -> CompletableFuture.completedFuture(CommandResult.success("JHarness 快速入门:\n1. 描述任务\n2. /help 查看命令\n3. /doctor 诊断\n4. /login 存储 Key"))));
+        register(cmd("onboarding", "重新触发首次启动向导（清除 ~/.jharness/.onboarded 标记并提示重启）",
+                (args, ctx, ec) -> {
+                    // 不在命令处理器内直接进行交互式 IO（CommandRegistry 无 Scanner/PrintStream），
+                    // 改为清除 onboarded 标记并提示用户：下次启动会自动触发向导。
+                    // 通过 config.OnboardingMarker 操作文件，避免 command → app 反向依赖。
+                    io.leavesfly.jharness.config.OnboardingMarker.clearMarker();
+                    String msg = "已清除 onboarding 标记。\n"
+                            + "下次启动 JHarness 时（在交互式终端中）将自动进入引导向导。\n"
+                            + "可立即查看快速入门：\n"
+                            + "  1. 直接描述你的任务\n"
+                            + "  2. /help  查看所有命令\n"
+                            + "  3. /doctor 诊断当前环境\n"
+                            + "  4. /login  配置 API Key";
+                    return CompletableFuture.completedFuture(CommandResult.success(msg));
+                }));
         
         logger.info("已注册 {} 个命令", commands.size());
     }

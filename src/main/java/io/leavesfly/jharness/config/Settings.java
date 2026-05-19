@@ -358,135 +358,160 @@ public class Settings {
     }
 
     /**
-     * 从默认配置文件加载设置。
+     * 加载应用设置，支持多层配置覆盖。
      *
-     * 合并策略（P1-L1）：
-     * - 先用无参构造器创建默认值 + 环境变量；
-     * - 再解析 JSON 为 JsonNode，仅当字段在 JSON 中显式存在时才覆盖默认值；
-     * - 对 primitive（int/boolean）字段同样基于 JsonNode.has() 判断是否存在，
-     *   避免 Jackson 默认 0 / false 覆盖掉合理默认值或环境变量带入的值。
+     * <p>合并策略（从低到高，后者覆盖前者）：
+     * <ol>
+     *   <li>字段硬编码默认值（{@code new Settings()} 构造器初始值）；</li>
+     *   <li>classpath 默认配置 {@code defaults/settings.json}（{@link DefaultSettingsLoader}）；</li>
+     *   <li>用户配置文件 {@code ~/.jharness/settings.json}；</li>
+     *   <li>环境变量（在构造器中已注入，但用户配置文件如果显式提供同名字段会覆盖环境变量，
+     *       因为我们希望配置文件具有更明确的意图）。</li>
+     * </ol>
+     *
+     * <p>实现细节：
+     * <ul>
+     *   <li>每一层都通过 {@link #mergeFromJson} 增量覆盖现有字段；</li>
+     *   <li>仅当 JSON 节点显式存在且类型正确时才覆盖，避免 Jackson 默认 0/false 误覆盖；</li>
+     *   <li>任何一层加载失败都降级为警告日志，不中断启动。</li>
+     * </ul>
      */
     public static Settings load() {
         Settings settings = new Settings();
+
+        // Layer 1: classpath 默认配置（应用级默认值）
+        DefaultSettingsLoader.loadClasspathDefaults()
+                .ifPresent(settings::mergeFromJson);
+
+        // Layer 2: 用户配置文件（用户级覆盖）
         Path configFile = DEFAULT_CONFIG_DIR.resolve("settings.json");
-        if (!Files.exists(configFile)) {
-            return settings;
-        }
-        try {
-            String json = Files.readString(configFile);
-            com.fasterxml.jackson.databind.JsonNode root = MAPPER.readTree(json);
-            if (!root.isObject()) {
-                logger.warn("配置文件根节点不是 JSON 对象，使用默认值: {}", configFile);
-                return settings;
-            }
+        DefaultSettingsLoader.loadFromPath(configFile)
+                .ifPresent(settings::mergeFromJson);
 
-            // ===== 引用类型：非空即覆盖 =====
-            if (root.hasNonNull("model")) settings.model = root.get("model").asText();
-            if (root.hasNonNull("apiKey")) settings.apiKey = root.get("apiKey").asText();
-            if (root.hasNonNull("baseUrl")) settings.baseUrl = root.get("baseUrl").asText();
-            if (root.hasNonNull("theme")) settings.theme = root.get("theme").asText();
-            if (root.hasNonNull("provider")) settings.provider = root.get("provider").asText();
-            if (root.hasNonNull("effort")) settings.effort = root.get("effort").asText();
-            if (root.hasNonNull("outputStyle")) settings.outputStyle = root.get("outputStyle").asText();
-            if (root.hasNonNull("systemPrompt")) settings.systemPrompt = root.get("systemPrompt").asText();
+        // Layer 3: 环境变量再叠加一次，保证 export OPENAI_* 总能生效
+        // （loadFromEnvironment 已在构造器中执行过一次，但被上面两层 JSON 覆盖了 model/apiKey/baseUrl，
+        //   因此这里再执行一次以恢复环境变量的优先级——前提是环境变量被显式设置）
+        settings.loadFromEnvironment();
 
-            if (root.hasNonNull("permissionMode")) {
-                try {
-                    settings.permissionMode = PermissionMode.valueOf(
-                            root.get("permissionMode").asText().toUpperCase());
-                } catch (IllegalArgumentException iae) {
-                    logger.warn("permissionMode 无效，保留默认: {}", root.get("permissionMode").asText());
-                }
-            }
-
-            // ===== 集合类型：通过 ObjectMapper 反序列化 =====
-            if (root.hasNonNull("allowedTools")) {
-                settings.allowedTools = MAPPER.convertValue(root.get("allowedTools"),
-                        MAPPER.getTypeFactory().constructCollectionType(List.class, String.class));
-            }
-            if (root.hasNonNull("deniedTools")) {
-                settings.deniedTools = MAPPER.convertValue(root.get("deniedTools"),
-                        MAPPER.getTypeFactory().constructCollectionType(List.class, String.class));
-            }
-            // 反序列化 pathRules / deniedCommandPatterns
-            if (root.hasNonNull("pathRules")) {
-                settings.pathRules = MAPPER.convertValue(root.get("pathRules"),
-                        MAPPER.getTypeFactory().constructCollectionType(
-                                List.class,
-                                MAPPER.getTypeFactory().constructMapType(Map.class, String.class, Object.class)));
-            }
-            if (root.hasNonNull("deniedCommandPatterns")) {
-                settings.deniedCommandPatterns = MAPPER.convertValue(root.get("deniedCommandPatterns"),
-                        MAPPER.getTypeFactory().constructCollectionType(List.class, String.class));
-            }
-            if (root.hasNonNull("mcpServers")) {
-                settings.mcpServers = MAPPER.convertValue(root.get("mcpServers"),
-                        MAPPER.getTypeFactory().constructMapType(Map.class, String.class, Object.class));
-            }
-            if (root.hasNonNull("enabledPlugins")) {
-                settings.enabledPlugins = MAPPER.convertValue(root.get("enabledPlugins"),
-                        MAPPER.getTypeFactory().constructMapType(Map.class, String.class, Boolean.class));
-            }
-
-            // ===== primitive 字段：仅当 JSON 中显式存在时才覆盖 =====
-            if (root.has("maxTokens") && root.get("maxTokens").isInt()) {
-                settings.maxTokens = root.get("maxTokens").asInt();
-            }
-            if (root.has("maxTurns") && root.get("maxTurns").isInt()) {
-                settings.maxTurns = root.get("maxTurns").asInt();
-            }
-            if (root.has("passes") && root.get("passes").isInt()) {
-                settings.passes = root.get("passes").asInt();
-            }
-            if (root.has("vimEnabled") && root.get("vimEnabled").isBoolean()) {
-                settings.vimEnabled = root.get("vimEnabled").asBoolean();
-            }
-            if (root.has("voiceEnabled") && root.get("voiceEnabled").isBoolean()) {
-                settings.voiceEnabled = root.get("voiceEnabled").asBoolean();
-            }
-            if (root.has("fastMode") && root.get("fastMode").isBoolean()) {
-                settings.fastMode = root.get("fastMode").asBoolean();
-            }
-            // 加载预算 / 超时 / 压缩相关字段
-            if (root.hasNonNull("dailyBudgetUsd")) {
-                try {
-                    settings.dailyBudgetUsd = new java.math.BigDecimal(
-                            root.get("dailyBudgetUsd").asText());
-                } catch (NumberFormatException nfe) {
-                    logger.warn("dailyBudgetUsd 格式非法，忽略: {}",
-                            root.get("dailyBudgetUsd").asText());
-                }
-            }
-            if (root.has("connectTimeoutSeconds") && root.get("connectTimeoutSeconds").isInt()) {
-                int v = root.get("connectTimeoutSeconds").asInt();
-                if (v > 0) settings.connectTimeoutSeconds = v;
-            }
-            if (root.has("readTimeoutSeconds") && root.get("readTimeoutSeconds").isInt()) {
-                int v = root.get("readTimeoutSeconds").asInt();
-                if (v > 0) settings.readTimeoutSeconds = v;
-            }
-            if (root.has("writeTimeoutSeconds") && root.get("writeTimeoutSeconds").isInt()) {
-                int v = root.get("writeTimeoutSeconds").asInt();
-                if (v > 0) settings.writeTimeoutSeconds = v;
-            }
-            if (root.has("messageCompactionTokenBudget")
-                    && root.get("messageCompactionTokenBudget").isInt()) {
-                settings.messageCompactionTokenBudget =
-                        root.get("messageCompactionTokenBudget").asInt();
-            }
-            if (root.has("messageCompactionMaxMessages")
-                    && root.get("messageCompactionMaxMessages").isInt()) {
-                settings.messageCompactionMaxMessages =
-                        root.get("messageCompactionMaxMessages").asInt();
-            }
-            if (root.has("autoSaveSessions") && root.get("autoSaveSessions").isBoolean()) {
-                settings.autoSaveSessions = root.get("autoSaveSessions").asBoolean();
-            }
-        } catch (Exception e) {
-            // 配置文件解析失败时使用默认值，但记录警告日志便于排查
-            logger.warn("配置文件解析失败，将使用默认值: {} (配置文件路径: {})", e.getMessage(), configFile);
-        }
         return settings;
+    }
+
+    /**
+     * 将一个 JSON 节点的字段增量合并到当前 Settings 实例。
+     *
+     * <p>语义：
+     * <ul>
+     *   <li>引用类型字段：仅当 JSON 节点中 {@code hasNonNull} 时才覆盖；</li>
+     *   <li>primitive 字段：仅当 JSON 节点中 {@code has} 且类型匹配时才覆盖；</li>
+     *   <li>集合 / Map 字段：整体替换（不做深度合并）。</li>
+     * </ul>
+     */
+    void mergeFromJson(com.fasterxml.jackson.databind.JsonNode root) {
+        if (root == null || !root.isObject()) {
+            return;
+        }
+
+        // ===== 引用类型：非空即覆盖 =====
+        if (root.hasNonNull("model")) this.model = root.get("model").asText();
+        if (root.hasNonNull("apiKey")) this.apiKey = root.get("apiKey").asText();
+        if (root.hasNonNull("baseUrl")) this.baseUrl = root.get("baseUrl").asText();
+        if (root.hasNonNull("theme")) this.theme = root.get("theme").asText();
+        if (root.hasNonNull("provider")) this.provider = root.get("provider").asText();
+        if (root.hasNonNull("effort")) this.effort = root.get("effort").asText();
+        if (root.hasNonNull("outputStyle")) this.outputStyle = root.get("outputStyle").asText();
+        if (root.hasNonNull("systemPrompt")) this.systemPrompt = root.get("systemPrompt").asText();
+
+        if (root.hasNonNull("permissionMode")) {
+            try {
+                this.permissionMode = PermissionMode.valueOf(
+                        root.get("permissionMode").asText().toUpperCase());
+            } catch (IllegalArgumentException iae) {
+                logger.warn("permissionMode 无效，保留当前值: {}", root.get("permissionMode").asText());
+            }
+        }
+
+        // ===== 集合类型：通过 ObjectMapper 反序列化（整体替换）=====
+        if (root.hasNonNull("allowedTools")) {
+            this.allowedTools = MAPPER.convertValue(root.get("allowedTools"),
+                    MAPPER.getTypeFactory().constructCollectionType(List.class, String.class));
+        }
+        if (root.hasNonNull("deniedTools")) {
+            this.deniedTools = MAPPER.convertValue(root.get("deniedTools"),
+                    MAPPER.getTypeFactory().constructCollectionType(List.class, String.class));
+        }
+        if (root.hasNonNull("pathRules")) {
+            this.pathRules = MAPPER.convertValue(root.get("pathRules"),
+                    MAPPER.getTypeFactory().constructCollectionType(
+                            List.class,
+                            MAPPER.getTypeFactory().constructMapType(Map.class, String.class, Object.class)));
+        }
+        if (root.hasNonNull("deniedCommandPatterns")) {
+            this.deniedCommandPatterns = MAPPER.convertValue(root.get("deniedCommandPatterns"),
+                    MAPPER.getTypeFactory().constructCollectionType(List.class, String.class));
+        }
+        if (root.hasNonNull("mcpServers")) {
+            this.mcpServers = MAPPER.convertValue(root.get("mcpServers"),
+                    MAPPER.getTypeFactory().constructMapType(Map.class, String.class, Object.class));
+        }
+        if (root.hasNonNull("enabledPlugins")) {
+            this.enabledPlugins = MAPPER.convertValue(root.get("enabledPlugins"),
+                    MAPPER.getTypeFactory().constructMapType(Map.class, String.class, Boolean.class));
+        }
+
+        // ===== primitive 字段：仅当 JSON 中显式存在且类型正确时才覆盖 =====
+        if (root.has("maxTokens") && root.get("maxTokens").isInt()) {
+            this.maxTokens = root.get("maxTokens").asInt();
+        }
+        if (root.has("maxTurns") && root.get("maxTurns").isInt()) {
+            this.maxTurns = root.get("maxTurns").asInt();
+        }
+        if (root.has("passes") && root.get("passes").isInt()) {
+            this.passes = root.get("passes").asInt();
+        }
+        if (root.has("vimEnabled") && root.get("vimEnabled").isBoolean()) {
+            this.vimEnabled = root.get("vimEnabled").asBoolean();
+        }
+        if (root.has("voiceEnabled") && root.get("voiceEnabled").isBoolean()) {
+            this.voiceEnabled = root.get("voiceEnabled").asBoolean();
+        }
+        if (root.has("fastMode") && root.get("fastMode").isBoolean()) {
+            this.fastMode = root.get("fastMode").asBoolean();
+        }
+        // 加载预算 / 超时 / 压缩相关字段
+        if (root.hasNonNull("dailyBudgetUsd")) {
+            try {
+                this.dailyBudgetUsd = new java.math.BigDecimal(
+                        root.get("dailyBudgetUsd").asText());
+            } catch (NumberFormatException nfe) {
+                logger.warn("dailyBudgetUsd 格式非法，忽略: {}",
+                        root.get("dailyBudgetUsd").asText());
+            }
+        }
+        if (root.has("connectTimeoutSeconds") && root.get("connectTimeoutSeconds").isInt()) {
+            int v = root.get("connectTimeoutSeconds").asInt();
+            if (v > 0) this.connectTimeoutSeconds = v;
+        }
+        if (root.has("readTimeoutSeconds") && root.get("readTimeoutSeconds").isInt()) {
+            int v = root.get("readTimeoutSeconds").asInt();
+            if (v > 0) this.readTimeoutSeconds = v;
+        }
+        if (root.has("writeTimeoutSeconds") && root.get("writeTimeoutSeconds").isInt()) {
+            int v = root.get("writeTimeoutSeconds").asInt();
+            if (v > 0) this.writeTimeoutSeconds = v;
+        }
+        if (root.has("messageCompactionTokenBudget")
+                && root.get("messageCompactionTokenBudget").isInt()) {
+            this.messageCompactionTokenBudget =
+                    root.get("messageCompactionTokenBudget").asInt();
+        }
+        if (root.has("messageCompactionMaxMessages")
+                && root.get("messageCompactionMaxMessages").isInt()) {
+            this.messageCompactionMaxMessages =
+                    root.get("messageCompactionMaxMessages").asInt();
+        }
+        if (root.has("autoSaveSessions") && root.get("autoSaveSessions").isBoolean()) {
+            this.autoSaveSessions = root.get("autoSaveSessions").asBoolean();
+        }
     }
 
     public void save() {

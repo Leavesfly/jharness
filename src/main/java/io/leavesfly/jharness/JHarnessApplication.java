@@ -2,6 +2,7 @@ package io.leavesfly.jharness;
 
 import io.leavesfly.jharness.app.bootstrap.QueryEngineBuilder;
 import io.leavesfly.jharness.app.cli.CliRunners;
+import io.leavesfly.jharness.app.onboarding.OnboardingService;
 import io.leavesfly.jharness.config.Settings;
 import io.leavesfly.jharness.config.SettingsBootstrap;
 import io.leavesfly.jharness.integration.api.OpenAiApiClient;
@@ -71,6 +72,10 @@ public class JHarnessApplication implements Callable<Integer> {
             description = "启用终端用户界面 (TUI)")
     private boolean enableTUI;
 
+    @Option(names = {"--skip-onboarding"},
+            description = "跳过首次启动的交互式 onboarding 向导（CI/脚本场景）")
+    private boolean skipOnboarding;
+
     public static void main(String[] args) {
         int exitCode = new CommandLine(new JHarnessApplication()).execute(args);
         System.exit(exitCode);
@@ -91,6 +96,9 @@ public class JHarnessApplication implements Callable<Integer> {
         Settings settings = Settings.load();
         applyCliOverrides(settings);
         logger.info("模型: {}", settings.getModel());
+
+        // Onboarding：仅在交互式模式且首次启动时触发，向导可修改 settings 并写入 settings.json
+        maybeRunOnboarding(settings);
 
         // API Key 校验：本地端点（Ollama 等）允许为空
         if (settings.getApiKey() == null || settings.getApiKey().isBlank()) {
@@ -123,5 +131,43 @@ public class JHarnessApplication implements Callable<Integer> {
         }
         settings.setMaxTurns(maxTurns);
         settings.setPermissionMode(permissionMode);
+    }
+
+    /**
+     * 在交互式模式下，若首次启动则触发 {@link OnboardingService} 向导。
+     *
+     * <p>触发条件（必须全部满足）：
+     * <ul>
+     *   <li>未传 {@code --skip-onboarding}；</li>
+     *   <li>非单次查询模式（{@code -p/--print} 未指定）；</li>
+     *   <li>输出格式为人类可读的 text（避免污染 json/stream-json 输出）；</li>
+     *   <li>{@code System.console() != null}（确保 stdin/stdout 连接到真实终端，
+     *       否则在管道、重定向、CI 等场景下读取交互式输入会立即 EOF）；</li>
+     *   <li>{@link OnboardingService#shouldRun(Settings)} 返回 true。</li>
+     * </ul>
+     *
+     * <p>向导执行成功后，settings 字段已被就地修改并已持久化到
+     * {@code ~/.jharness/settings.json}，后续 {@link QueryEngineBuilder} 直接使用新配置。
+     */
+    private void maybeRunOnboarding(Settings settings) {
+        if (skipOnboarding) {
+            logger.debug("--skip-onboarding 已指定，跳过 onboarding");
+            return;
+        }
+        if (printPrompt != null && !printPrompt.isEmpty()) {
+            return; // 单次查询模式不弹向导
+        }
+        if (outputFormat != null && !"text".equalsIgnoreCase(outputFormat)) {
+            return; // 结构化输出场景不弹向导
+        }
+        if (System.console() == null) {
+            logger.debug("未检测到真实终端（System.console()==null），跳过 onboarding");
+            return;
+        }
+        OnboardingService onboarding = new OnboardingService();
+        if (!onboarding.shouldRun(settings)) {
+            return;
+        }
+        onboarding.run(settings);
     }
 }

@@ -2,7 +2,7 @@
   "_comment": "JHarness 默认配置模板。首次启动时由 SettingsBootstrap 拷贝到 ~/.jharness/settings.json，可自行修改。",
   "model": "qwen3.5:4b",
   "baseUrl": "http://localhost:11434/v1",
-  "provider": "openai",
+  "provider": "ollama",
   "maxTokens": 4096,
   "maxTurns": 8,
   "effort": "medium",
