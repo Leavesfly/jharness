@@ -197,7 +197,8 @@ class JHarnessImprovementsTest {
 
     @Test
     void mapHookEventNormalizesCaseAndSeparator() throws Exception {
-        Method method = JHarnessApplication.class
+        // 4.8 拆分后 mapHookEvent 已迁至 PluginBootstrap（同语义，public static）
+        Method method = io.leavesfly.jharness.app.bootstrap.PluginBootstrap.class
                 .getDeclaredMethod("mapHookEvent", String.class);
         method.setAccessible(true);
 
