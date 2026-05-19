@@ -87,6 +87,25 @@ java -jar target/jharness-0.1.0-SNAPSHOT.jar --tui
 | `--max-turns <n>` | 最大 ReAct 轮数（默认 8） |
 | `--output-format <fmt>` | `text` / `json` / `stream-json` |
 | `--tui` | 启用 Lanterna 终端界面 |
+| `--skip-onboarding` | 跳过首次启动的 Agent Onboarding 向导（CI / 脚本场景） |
+
+### 🧭 首次启动 · Agent Onboarding
+
+首次在交互式终端启动 JHarness 时，若 `~/.jharness/.onboarded` 标记不存在且当前未配置可用凭据（API Key 为空且 baseUrl 非本地端点），会自动进入 **Agent Onboarding 向导**：
+
+1. **选择模型来源**：本地 Ollama（默认） / 远端 OpenAI 兼容端点 / 跳过；
+2. **填写 Base URL 与模型名**（带默认值，回车即接受）；
+3. **API Key 输入**（脱敏显示当前值；输入 `-` 显式清空）；
+4. **权限模式**：`DEFAULT` / `FULL_AUTO` / `PLAN`。
+
+完成后写入 `~/.jharness/settings.json` 并创建 `.onboarded` 标记，下次启动自动跳过。
+
+| 行为 | 操作 |
+|------|------|
+| 重新触发向导 | 交互式中执行 `/onboarding`（清除 marker） → 重启 |
+| 一次性跳过 | `--skip-onboarding` |
+| 永久跳过 | 向导第一步选 `3) 跳过`（会写入 marker） |
+| CI / 重定向 / IDE Run | 自动跳过（`System.console() == null`） |
 
 ---
 
@@ -345,11 +364,17 @@ DeniedToolsRule → DeniedCommandsRule → PathRulesRule → ModeDecisionRule
 
 ## ⚙️ 配置
 
-### 加载优先级
+### 加载优先级（从低到高，高优先级覆盖低优先级）
 
 ```
-默认值 → 环境变量 → 配置文件 → CLI 选项
+1. 字段硬编码兜底           (Settings 构造器初始值)
+2. classpath defaults/settings.json   (DefaultSettingsLoader，进程内缓存)
+3. 用户 ~/.jharness/settings.json
+4. 环境变量                 (OPENAI_API_KEY / JHARNESS_MODEL ...)
+5. CLI 选项                 (-m / --max-turns / --permission-mode ...)
 ```
+
+`Settings.load()` 内部按此顺序逐层 `mergeFromJson(JsonNode)` 增量覆盖；仅当节点显式存在且类型正确时才覆盖，避免 Jackson 默认 `0/false` 误覆盖。
 
 ### 环境变量
 
@@ -365,7 +390,8 @@ DeniedToolsRule → DeniedCommandsRule → PathRulesRule → ModeDecisionRule
 
 ```
 ~/.jharness/
-├── settings.json
+├── settings.json         # 全局配置（首次启动从 classpath defaults/ 释放）
+├── .onboarded            # Onboarding 完成标记（由 OnboardingMarker 维护）
 ├── plugins/              # 用户级插件
 ├── skills/               # 用户级技能
 └── data/
@@ -434,7 +460,7 @@ mvn spotless:apply        # 自动格式化
 | [`wiki/13-多智能体协调.md`](wiki/13-多智能体协调.md) | Orchestrator、Team |
 | [`wiki/14-后台任务与Cron.md`](wiki/14-后台任务与Cron.md) | BackgroundTaskManager、CronRegistry |
 | [`wiki/15-TUI终端界面.md`](wiki/15-TUI终端界面.md) | Lanterna、Console、Widgets |
-| [`wiki/16-配置管理.md`](wiki/16-配置管理.md) | Settings 全字段 |
+| [`wiki/16-配置管理.md`](wiki/16-配置管理.md) | Settings 全字段、分层加载、Onboarding |
 | [`wiki/17-扩展开发指南.md`](wiki/17-扩展开发指南.md) | 自定义工具 / 命令 / 插件 / Hook / Provider |
 
 ---

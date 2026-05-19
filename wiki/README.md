@@ -31,7 +31,7 @@ JHarness 是一个 Java 实现的轻量级 AI Agent 框架。本 wiki 按"由表
 | 章节 | 主题 | 关键类 / 文件 |
 |------|------|--------------|
 | [01-项目概述](01-项目概述.md) | 定位、特性、与 OpenHarness 关系 | `JHarnessApplication` · `pom.xml` |
-| [02-快速开始](02-快速开始.md) | 环境、构建、首次启动、模型对接 | `Settings` · `SettingsBootstrap` |
+| [02-快速开始](02-快速开始.md) | 环境、构建、首次启动、Onboarding 向导、模型对接 | `Settings` · `SettingsBootstrap` · `OnboardingService` |
 | [03-整体架构](03-整体架构.md) | 分层、SPI、依赖治理、ArchUnit | `kernel.spi.*` · `app.bootstrap.*` |
 | [04-核心引擎-QueryEngine](04-核心引擎-QueryEngine.md) | ReAct 循环、流式事件、压缩、取消、持久化 | `QueryEngine` · `ToolCallDispatcher` · `MessageCompactionService` |
 | [05-API客户端](05-API客户端.md) | OpenAI 协议 SSE、重试、错误分类、本地端点 | `OpenAiApiClient` · `OpenAiSseStreamReader` · `RetryPolicy` |
@@ -45,7 +45,7 @@ JHarness 是一个 Java 实现的轻量级 AI Agent 框架。本 wiki 按"由表
 | [13-多智能体协调](13-多智能体协调.md) | 并行 / 顺序 / 单任务、Team 管理 | `AgentOrchestrator` · `TeamRegistry` |
 | [14-后台任务与Cron](14-后台任务与Cron.md) | 后台 Shell/Agent 任务、Cron 定时调度 | `BackgroundTaskManager` · `CronRegistry` |
 | [15-TUI终端界面](15-TUI终端界面.md) | Lanterna TUI、ConsoleInteractiveSession、Widgets | `TerminalUI` · `ConsoleInteractiveSession` · `MarkdownRenderer` |
-| [16-配置管理](16-配置管理.md) | Settings 全字段、环境变量、默认模板 | `Settings` · `SettingsBootstrap` · `defaults/settings.json` |
+| [16-配置管理](16-配置管理.md) | 分层加载、Settings 全字段、Onboarding 标记、默认模板 | `Settings` · `DefaultSettingsLoader` · `SettingsBootstrap` · `OnboardingMarker` · `defaults/settings.json` |
 | [17-扩展开发指南](17-扩展开发指南.md) | 自定义工具 / 命令 / 插件 / Hook / Provider | `BaseTool` · `SlashCommand` · `LlmGateway` |
 
 ---
