@@ -1,296 +1,314 @@
-# 14 - 后台任务与 Cron
+# 14 · 后台任务与 Cron
 
-> 位于 `io.leavesfly.jharness.agent.tasks` 与 `io.leavesfly.jharness.integration.CronRegistry`。本章讲解 JHarness 的后台长任务管理和定时作业调度两大子系统。
+> 包路径：
+> - 后台任务：`io.leavesfly.jharness.capability.task`
+> - 定时任务：`io.leavesfly.jharness.integration.cron`
 
-## 1. 子系统概览
+两套独立机制：
 
-| 子系统 | 用途 | 核心类 |
-|--------|------|--------|
-| **后台任务** | 异步 / 长耗时任务的登记与查询 | `TaskRecord`、`TaskStatus`、`BackgroundTaskManager` |
-| **Cron 作业** | 按间隔定时执行的周期任务 | `CronRegistry` |
+- **后台任务（`BackgroundTaskManager`）** — 即时启动的长运行任务（Shell / 子进程 Agent），生命周期挂在 JHarness 进程上
+- **定时任务（`CronRegistry`）** — 按 Cron 表达式周期性触发的作业，配置持久化到磁盘
 
-两者独立：`BackgroundTaskManager` 表示「正在运行什么」，`CronRegistry` 表示「接下来要运行什么」。Cron 被触发后通常会在 `BackgroundTaskManager` 里新增一条 `TaskRecord`。
+---
 
-`BackgroundTaskManager` 实现 `AutoCloseable`，允许 try-with-resources 关闭；线程池大小上限 `MAX_THREAD_POOL_SIZE=20`；使用命名 `ThreadFactory` 便于日志定位；`shutdown` 幂等。
+## 1. 后台任务（BackgroundTaskManager）
 
-## 2. 后台任务（Task）
-
-### 2.1 `TaskStatus` 状态机
+### 1.1 类设计
 
 ```java
-public enum TaskStatus {
-    PENDING,     // 已创建，尚未启动
-    RUNNING,     // 正在执行
-    COMPLETED,   // 成功结束
-    FAILED,      // 执行失败
-    STOPPED,     // 用户主动停止
-    KILLED       // 强制终止（例如超时被 killForcibly）
+public class BackgroundTaskManager implements AutoCloseable {
+    private static final int MAX_THREAD_POOL_SIZE = 20;
+
+    private final Map<String, TaskRecord> tasks;        // taskId → 记录
+    private final Map<String, Process> processes;       // taskId → 子进程
+    private final ExecutorService executor;             // 有界线程池
+    private final Path outputDir;                       // 输出文件目录
+    private volatile boolean closed;
+    private volatile PermissionChecker permissionChecker;
 }
 ```
 
-合法跃迁：
-```
-PENDING → RUNNING → (COMPLETED | FAILED | STOPPED | KILLED)
-PENDING → STOPPED                              （未启动就被取消）
-```
-
-### 2.2 `TaskRecord.TaskType`
+### 1.2 任务记录（TaskRecord）
 
 ```java
-public enum TaskType {
-    LOCAL_BASH,     // 本地 shell 命令（BashTool 异步模式）
-    LOCAL_AGENT,    // fork 的 JHarness 子会话
-    REMOTE_AGENT,   // 通过 BridgeSessionManager 远端会话
-    IN_PROCESS      // 进程内线程（多用于 Orchestrator 的 SubAgent）
+public class TaskRecord {
+    public enum TaskType {
+        LOCAL_BASH,       // 本地 shell 命令
+        LOCAL_AGENT,      // 本地子进程 Agent
+        REMOTE_AGENT,     // 远程 Agent（保留）
+        IN_PROCESS        // 进程内（保留）
+    }
+
+    String id;                   // 8 位 UUID 前缀
+    TaskType type;
+    String command;
+    String description;
+    String prompt;               // Agent 任务的 prompt
+    Path cwd;
+    TaskStatus status;
+    Map<String, String> metadata;
+    Instant startedAt;
+    Instant endedAt;
+    Integer exitCode;
+    String model;
 }
 ```
 
-### 2.3 `TaskRecord` 字段
+`TaskStatus` 枚举：`PENDING / RUNNING / COMPLETED / FAILED / STOPPED / KILLED`。
 
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| `taskId` | `String` | UUID |
-| `type` | `TaskType` | 如上 |
-| `description` | `String` | 可读描述 |
-| `status` | `TaskStatus` | 状态 |
-| `createdAt` / `startedAt` / `endedAt` | `Instant` | 时间线 |
-| `output` | `String` | 摘要输出（完整输出另存文件） |
-| `metadata` | `Map<String,Object>` | 扩展字段（pid、cwd、command 等） |
-
-### 2.4 `BackgroundTaskManager` 典型 API
+### 1.3 主要 API
 
 ```java
-BackgroundTaskManager tm = new BackgroundTaskManager(...);
-tm.setPermissionChecker(checker);                // 与权限系统共享
-
-String id = tm.createTask(type, description, metadata);
-tm.startTask(id, runnable);                       // PENDING → RUNNING
-tm.completeTask(id, output);                      // → COMPLETED
-tm.failTask(id, error);                           // → FAILED
-tm.stopTask(id);                                  // → STOPPED
-tm.killTask(id);                                  // → KILLED（强杀进程）
-
-TaskRecord rec = tm.getTask(id);
-List<TaskRecord> all = tm.listTasks();
-List<TaskRecord> active = tm.listActiveTasks();   // PENDING + RUNNING
+TaskRecord createShellTask(String command, String description, Path cwd);
+TaskRecord createAgentTask(String prompt, String description, Path cwd, String model, String apiKey);
+TaskRecord getTask(String taskId);
+List<TaskRecord> listTasks(TaskStatus status);
+boolean stopTask(String taskId);        // 优雅停止（SIGTERM 后等 5s 再 SIGKILL）
+boolean killTask(String taskId);        // 强杀（SIGKILL）
+String readTaskOutput(String taskId);   // 读取 stdout/stderr
+boolean writeToTask(String taskId, String message);  // 向 Agent 任务 stdin 写入
+void shutdown();                        // 关闭线程池 + 终止所有进程
+@Override void close();                 // 调 shutdown()
 ```
 
-### 2.5 并发模型
+### 1.4 输出文件
 
-- 内部用 `ConcurrentHashMap<String, TaskRecord> tasks` 登记
-- `LOCAL_BASH` 由 `ProcessBuilder.start()` fork 子进程，stdout/stderr 由两个 IO 线程消费
-- `IN_PROCESS` 交给 `ExecutorService` 跑 `Runnable` / `Callable`
-- 超时由 `ScheduledExecutorService` 延迟触发 `stopTask` / `killTask`
+每个任务的 stdout / stderr 重定向到：
 
-### 2.6 `/tasks` 命令
+```
+<outputDir>/<taskId>.log
+```
 
-由 `TaskCommandHandler.createTasksCommand` 注册：
+`outputDir` 默认 `~/.jharness/data/tasks/`，由 `BackgroundTaskManager` 构造时创建。
 
-- `/tasks` — 列出活跃任务
-- `/tasks all` — 全部任务
-- `/tasks show <id>` — 详情
-- `/tasks stop <id>` — 优雅停止
-- `/tasks kill <id>` — 强制终止
-- `/tasks clear` — 清理已结束记录
-
-### 2.7 与 BashTool 的集成
-
-`BashTool` 支持两种模式：
-
-- **同步**：阻塞等待命令结束，直接返回输出
-- **异步**（`run_in_background=true`）：
-  1. 创建 `TaskRecord(type=LOCAL_BASH, status=PENDING)`
-  2. `ProcessBuilder` 启动，`startTask(id, ...)` 标 RUNNING
-  3. 立即返回 `taskId` 给 LLM
-  4. 进程结束回调 → `completeTask` / `failTask`
-
-LLM 后续可通过 `BashOutputTool` 按 `taskId` 查询输出。
-
-## 3. Cron 作业
-
-### 3.1 `CronRegistry` 结构
+### 1.5 线程池配置
 
 ```java
-public class CronRegistry {
-    private final Path registryPath;                     // cron_jobs.json
-    private final List<Map<String,Object>> jobs;          // synchronizedList
-    private final ScheduledExecutorService scheduler;     // 双线程守护池
-    private final Map<String, ScheduledFuture<?>> scheduledTasks;
-    private CronJobExecutor jobExecutor;                  // 回调接口
+this.executor = Executors.newFixedThreadPool(MAX_THREAD_POOL_SIZE, namedThreadFactory("jharness-bg-task-"));
+```
+
+- 固定大小 20 线程
+- 命名 ThreadFactory，便于 `jstack` / 日志定位
+- `daemon=false`：JVM 退出时等任务完成
+- `UncaughtExceptionHandler` 记录未捕获异常
+
+### 1.6 权限闸门
+
+`setPermissionChecker(checker)` 注入后，每次创建 Shell / Agent 任务在 fork 子进程前先评估：
+
+```java
+PermissionDecision decision = permissionChecker.evaluate(
+    "bash", false, null, command);
+if (decision != null && !decision.isAllowed() && !decision.isRequiresConfirmation()) {
+    task.setStatus(TaskStatus.FAILED);
+    return task;   // 不 fork 子进程
 }
 ```
 
-### 3.2 Job JSON 结构
+工具名固定用 `"bash"`，与前台 `BashTool.getName()` 对齐，使权限规则前后台一致生效。
+
+### 1.7 优雅关闭
+
+```java
+public synchronized void shutdown() {
+    if (closed) return;     // 幂等
+    closed = true;
+    // 1. 停止接收新任务
+    executor.shutdown();
+    // 2. 给所有进程发送 SIGTERM
+    processes.values().forEach(Process::destroy);
+    // 3. 等待 5 秒
+    try {
+        if (!executor.awaitTermination(5, TimeUnit.SECONDS)) {
+            // 4. 强杀
+            executor.shutdownNow();
+            processes.values().forEach(Process::destroyForcibly);
+        }
+    } catch (InterruptedException ignored) { /* ... */ }
+}
+```
+
+`close()` 委托给 `shutdown()`，支持 try-with-resources。
+
+### 1.8 task 系列工具
+
+LLM 通过以下工具操作后台任务：
+
+| 工具 | 行为 |
+|------|------|
+| `task_create` | 创建任务（type=shell/agent） |
+| `task_get` | 查询单个任务 |
+| `task_list` | 列出全部 |
+| `task_stop` | 优雅停止 |
+| `task_output` | 读 stdout/stderr |
+| `task_update` | 更新 metadata |
+
+---
+
+## 2. 定时任务（CronRegistry）
+
+### 2.1 类设计
+
+```java
+public class CronRegistry implements AutoCloseable {
+    private final Path registryPath;     // ~/.jharness/data/cron_jobs.json
+    private final List<Map<String, Object>> jobs;   // 同步 List
+    private final ScheduledExecutorService scheduler;
+    private final Map<String, ScheduledFuture<?>> scheduledTasks;  // 并发 Map
+    private final Object jobsLock;
+    private volatile boolean closed;
+    private CronJobExecutor jobExecutor;
+}
+```
+
+### 2.2 作业数据模型
+
+每个作业是一个 `Map<String, Object>`，约定字段：
 
 ```json
 {
   "name": "daily-summary",
-  "schedule": "@every 24h",
-  "command": "/summary",
+  "description": "每日总结",
+  "cron": "0 0 18 * * ?",
   "enabled": true,
-  "lastExecuted": "2025-01-15T08:00:00Z"
+  "type": "agent",
+  "prompt": "请总结今日工作内容",
+  "model": "deepseek-chat",
+  "lastExecutedAt": "2026-05-19T18:00:00Z",
+  "createdAt": "2026-05-01T10:00:00Z"
 }
 ```
 
-### 3.3 `schedule` 支持的格式
+**Cron 表达式**：支持标准 6 段格式（秒 分 时 日 月 周）。
 
-当前**仅支持 `@every` 间隔**，不支持标准 cron 五段式表达式：
+### 2.3 持久化
 
-| 格式 | 含义 |
-|------|------|
-| `@every 30s` | 每 30 秒 |
-| `@every 5m` | 每 5 分钟 |
-| `@every 1h` | 每 1 小时 |
-| 其他 | 记作「仅手动触发」，`parseScheduleInterval` 返回 -1 |
+```
+~/.jharness/data/cron_jobs.json
+```
 
-### 3.4 `CronJobExecutor` 回调
+启动时自动加载，每次 `upsertJob` / `deleteJob` / `markExecuted` 立即写盘。
+
+### 2.4 调度器配置
+
+```java
+new ScheduledThreadPoolExecutor(2, namedDaemonThreadFactory("jharness-cron-"))
+```
+
+- 池大小 2 线程
+- `daemon=true`：JVM 关闭时不阻塞退出（与后台任务相反）
+- 名称 `jharness-cron-N`
+
+### 2.5 主要 API
+
+```java
+public CronRegistry(Path dataDir);
+public void setJobExecutor(CronJobExecutor executor);   // 设置后启动调度
+public void upsertJob(Map<String, Object> job);          // 增 / 改
+public boolean deleteJob(String name);
+public Map<String, Object> getJob(String name);
+public List<Map<String, Object>> listJobs();
+public void markExecuted(String name, Instant executedAt);
+public String getSummary();
+public synchronized void shutdown();                     // 幂等
+@Override public void close();
+```
+
+`CronJobExecutor` 是函数式接口：
 
 ```java
 @FunctionalInterface
 public interface CronJobExecutor {
-    void execute(Map<String,Object> job);
+    void execute(Map<String, Object> job);
 }
 ```
 
-应用层（通常在 `JHarnessApplication` 启动时）注入：
+通常注入"按 prompt 调 QueryEngine"的 lambda：
 
 ```java
 cronRegistry.setJobExecutor(job -> {
-    String cmd = (String) job.get("command");
-    taskManager.createAndRunBashTask(cmd, "cron:" + job.get("name"));
+    String prompt = (String) job.get("prompt");
+    queryEngine.submitMessage(prompt, ev -> {}).join();
+    cronRegistry.markExecuted((String) job.get("name"), Instant.now());
 });
 ```
 
-即：Cron 触发 → 调 `jobExecutor` → 应用层把它转为一条 `TaskRecord`。
+### 2.6 并发安全
 
-### 3.5 调度线程工厂
+历史 bug：旧实现用 `HashMap` 却在 `synchronized(jobsLock)` 之外访问 `scheduledTasks`，存在数据竞争。
 
-```java
-private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(
-    2,
-    new ThreadFactory() {
-        private final AtomicInteger counter = new AtomicInteger();
-        @Override public Thread newThread(Runnable r) {
-            Thread t = new Thread(r, "jharness-cron-" + counter.incrementAndGet());
-            t.setDaemon(true);                              // 守护线程，随 JVM 退出
-            t.setUncaughtExceptionHandler((thread, ex) ->
-                LoggerFactory.getLogger(CronRegistry.class)
-                    .error("cron 调度线程未捕获异常: {}", thread.getName(), ex));
-            return t;
-        }
-    });
-```
+**修复**：
 
-要点：
-- **守护线程**：不阻止 JVM 退出
-- **命名**：`jharness-cron-N`，方便日志定位
-- **未捕获异常兜底**：避免线程悄悄死掉
+- `scheduledTasks` 改用 `ConcurrentHashMap`
+- `jobs` 改用 `Collections.synchronizedList(new ArrayList<>())`
+- 复合操作仍在 `synchronized(jobsLock)` 块内
 
-### 3.6 `scheduleJob`：单作业调度
+### 2.7 cron 系列工具
 
-```java
-long intervalSeconds = parseScheduleInterval(schedule);
-if (intervalSeconds <= 0) return;    // 仅手动触发
-
-ScheduledFuture<?> future = scheduler.scheduleAtFixedRate(() -> {
-    try {
-        jobExecutor.execute(job);
-        markExecuted(name, Instant.now());
-    } catch (Exception e) {
-        logger.error("cron 作业 {} 执行失败", name, e);
-    }
-}, intervalSeconds, intervalSeconds, TimeUnit.SECONDS);
-
-scheduledTasks.put(name, future);
-```
-
-- 首次延迟 = 间隔（避免启动瞬间风暴）
-- 失败被 catch 防止 `ScheduledFuture` 链停止
-
-### 3.7 API 速览
-
-```java
-CronRegistry reg = new CronRegistry(dataDir.resolve("cron_jobs.json"));
-reg.setJobExecutor(executor);
-
-reg.upsertJob(Map.of(
-    "name",     "daily-summary",
-    "schedule", "@every 24h",
-    "command",  "/summary",
-    "enabled",  true));
-
-reg.deleteJob("daily-summary");
-reg.getJob("daily-summary");
-reg.listJobs();
-reg.markExecuted("daily-summary", Instant.now());
-
-reg.shutdown();                        // 取消所有 ScheduledFuture + shutdown 线程池
-```
-
-### 3.8 原子持久化
-
-`saveJobs()` 使用 **临时文件 + ATOMIC_MOVE** 策略：
-
-```java
-Files.createDirectories(registryPath.getParent());
-Path tempPath = Files.createTempFile(parent, "cron_jobs", ".json.tmp");
-Files.writeString(tempPath, content);
-try {
-    Files.move(tempPath, registryPath, ATOMIC_MOVE, REPLACE_EXISTING);
-} catch (AtomicMoveNotSupportedException amnse) {
-    // 跨挂载点降级
-    Files.move(tempPath, registryPath, REPLACE_EXISTING);
-}
-```
-
-并在 catch 里**清理残留临时文件**，防止目录污染。
-
-### 3.9 `/cron` 命令
-
-由 `ConfigPlusCommandHandler.createCronCommand` 注册：
-
-- `/cron list` — 所有作业
-- `/cron add <name> <schedule> <command>` — 新建
-- `/cron enable <name>` / `/cron disable <name>`
-- `/cron run <name>` — 立即触发一次
-- `/cron remove <name>`
-
-## 4. 两个子系统的组合流程
-
-```
-启动：
-  CronRegistry.loadJobs()
-  CronRegistry.setJobExecutor(job -> taskManager.createAndRunBashTask(...))
-  CronRegistry.scheduleAllEnabledJobs()
-
-运行：
-  每到间隔 → scheduler 触发 →
-    jobExecutor.execute(job) →
-      bgTaskManager.createTask(LOCAL_BASH, "cron:" + name, meta)
-      bgTaskManager.startTask(id, processRunnable)
-      （异步完成后 completeTask / failTask）
-    cronRegistry.markExecuted(name, now)
-
-用户查询：
-  /tasks        → BackgroundTaskManager.listTasks
-  /cron list    → CronRegistry.listJobs
-
-关闭：
-  CronRegistry.shutdown()
-  BackgroundTaskManager.close()    // AutoCloseable，幂等
-```
-
-## 5. 最佳实践
-
-- Cron 作业命令尽量走 **斜杠命令**（如 `/summary`）而非裸 shell，可复用权限系统
-- 长耗时任务优先用 **异步 BashTool**，让用户在其运行时继续与 Agent 交互
-- `/tasks clear` 定期清理，避免内存/磁盘里累积过多 `TaskRecord`
-- 只需手动触发的任务，把 `schedule` 留空或填非 `@every` 表达式，`/cron run` 启动
+| 工具 | 行为 |
+|------|------|
+| `cron_create` | 创建定时任务 |
+| `cron_list` | 列出全部 |
+| `cron_delete` | 删除 |
+| `remote_trigger` | 按需立即触发一次（不影响调度） |
 
 ---
 
-## 🔗 相关文档
+## 3. `/tasks` 与 `/cron` 命令
 
-- [06-工具系统](06-工具系统.md) — BashTool / BashOutputTool
-- [13-多智能体协调](13-多智能体协调.md) — `IN_PROCESS` 类型任务的使用场景
-- [07-斜杠命令系统](07-斜杠命令系统.md) — `/tasks` / `/cron` 命令
+| 命令 | 行为 |
+|------|------|
+| `/tasks` | 列出全部后台任务（带状态） |
+| `/tasks <id>` | 查看任务详情 |
+| `/cron list` | 列出全部定时任务 |
+| `/cron add` | 添加（交互式） |
+| `/cron remove <name>` | 删除 |
+| `/cron summary` | 摘要 |
+
+---
+
+## 4. 关闭顺序
+
+`QueryEngineBuilder` 注册的 close hook：
+
+```java
+engine.registerCloseHook(() -> {
+    mcp.close();           // 1. 关 MCP
+    cron.close();          // 2. 关 cron
+    task.shutdown();       // 3. 关后台任务
+    apiClient.cancelAllActiveRequests();  // 4. 取消 LLM 请求
+});
+```
+
+所有 `close` / `shutdown` 都是**幂等**的，重复调用不抛异常。
+
+---
+
+## 5. 安全注意事项
+
+1. **PLAN 模式下** 创建 Shell 任务会被权限闸门拒绝
+2. **Cron 命令** 同样走权限评估（通过 `jobExecutor` 内的 `queryEngine.submitMessage` → 工具调用 → 权限检查）
+3. **后台 Agent 任务** 用独立 API Key 时，需要确保 Key 不被日志泄漏
+4. **任务输出文件** 在用户目录下，注意敏感信息
+
+---
+
+## 6. 关键类清单
+
+| 类 | 文件 | 行数 | 职责 |
+|----|------|------|------|
+| `BackgroundTaskManager` | `task/BackgroundTaskManager.java` | 348 | 后台任务管理 + 进程跟踪 |
+| `TaskRecord` | `task/TaskRecord.java` | 80 | 任务数据模型 |
+| `TaskStatus` | `task/TaskStatus.java` | 14 | 状态枚举 |
+| `CronRegistry` | `cron/CronRegistry.java` | 411 | 定时任务调度 + 持久化 |
+| `CronRegistry.CronJobExecutor` | 内部接口 | — | 作业执行器 |
+| `TaskCreateTool` 等 | `tools/builtin/task/...` | — | task 工具 |
+| `CronCreateTool` 等 | `tools/builtin/cron/...` | — | cron 工具 |
+
+---
+
+## 7. 下一步
+
+- 多 Agent 协调 → [13-多智能体协调](13-多智能体协调.md)
+- 工具调用权限 → [08-权限系统](08-权限系统.md)
+- 任务输出文件读取 → [06-工具系统 § 7.5](06-工具系统.md#75-任务管理-builtintask)

@@ -1,56 +1,30 @@
 # JHarness
 
-**Java 实现的轻量级 AI 智能体框架** — 一个功能完备的 AI Agent 开发与运行平台，提供丰富的内置工具、插件系统、多智能体协调、MCP 协议支持和终端交互界面。
+> Java 实现的轻量级 AI Agent 框架 —— OpenHarness 的 Java 版本。
 
-[![Java](https://img.shields.io/badge/Java-17+-blue.svg)](https://openjdk.org/)
-[![Maven](https://img.shields.io/badge/Maven-3.x-orange.svg)](https://maven.apache.org/)
-[![License](https://img.shields.io/badge/License-Apache%202.0-green.svg)](LICENSE)
+[![Java](https://img.shields.io/badge/Java-17%2B-blue)]()
+[![Maven](https://img.shields.io/badge/Maven-3.6.3%2B-orange)]()
+[![License](https://img.shields.io/badge/License-Apache%202.0-green)]()
 
----
-
-## 📖 目录
-
-- [项目简介](#-项目简介)
-- [核心特性](#-核心特性)
-- [快速开始](#-快速开始)
-- [架构概览](#-架构概览)
-- [模块详解](#-模块详解)
-- [内置工具](#-内置工具)
-- [斜杠命令](#-斜杠命令)
-- [插件系统](#-插件系统)
-- [技能系统](#-技能系统)
-- [Hook 系统](#-hook-系统)
-- [MCP 协议支持](#-mcp-协议支持)
-- [多智能体协调](#-多智能体协调)
-- [权限系统](#-权限系统)
-- [配置管理](#-配置管理)
-- [开发指南](#-开发指南)
-- [技术栈](#-技术栈)
-
----
-
-## 🌟 项目简介
-
-JHarness 是 OpenHarness 的 Java 实现，旨在提供一个**轻量级、可扩展、功能完备**的 AI 智能体框架。它将 LLM 的推理能力与丰富的工具生态相结合，使 AI Agent 能够执行文件操作、代码分析、Shell 命令、网络搜索等多种任务。
-
-JHarness 支持**交互式终端界面（TUI）**和**单次查询模式**，适用于开发辅助、自动化任务、代码审查等多种场景。
+JHarness 是一个开箱即用的 AI 编程助手框架，提供 **ReAct 查询引擎**、**40+ 内置工具**、**60+ 斜杠命令**、**多智能体协调**、**MCP 协议客户端**、**插件 & 技能扩展**、**Hook 生命周期**、**Cron 定时任务**等能力。默认对接本地 Ollama，也兼容所有 OpenAI 协议的远端服务（DeepSeek / Qwen / Kimi / DashScope / vLLM 等）。
 
 ---
 
 ## ✨ 核心特性
 
-- **🔧 40+ 内置工具** — 文件读写、代码搜索、Shell 执行、Web 搜索、LSP 代码智能等
-- **🔌 插件系统** — 支持从用户目录和项目目录加载自定义插件
-- **🎯 技能系统** — 通过 Markdown 文件定义可复用的 AI 技能
-- **🔗 Hook 系统** — 在会话和工具执行的关键生命周期点注入自定义逻辑
-- **🌐 MCP 协议** — 完整的 Model Context Protocol 客户端支持（stdio / HTTP）
-- **🤖 多智能体协调** — 支持多 Agent 并行/顺序执行和团队管理
-- **🔒 权限系统** — 三级权限模式（Default / Full Auto / Plan），细粒度控制工具执行
-- **💬 会话管理** — 会话持久化、恢复、导出，支持消息压缩
-- **🖥️ 终端 UI** — 基于 Lanterna 的交互式终端界面
-- **📊 成本追踪** — 实时跟踪 Token 使用量和 API 调用成本
-- **⏰ 定时任务** — 内置 Cron 作业注册和管理
-- **🔄 流式响应** — 基于 SSE 的实时流式输出
+- **🚀 开箱即用**：默认对接本地 Ollama (`qwen3.5:4b`)，无需 API Key 即可启动
+- **🔌 多 Provider**：实现 `LlmGateway` SPI，可扩展任意 OpenAI 兼容协议
+- **🛠️ 40+ 内置工具**：覆盖文件、代码智能 (LSP)、Shell、网络、任务、Agent、MCP、Cron 全场景
+- **⌨️ 60+ 斜杠命令**：交互式命令体系（`/help` `/model` `/permissions` `/git` `/mcp` `/cron` …）
+- **🔒 多层权限系统**：三种模式 × 工具白/黑名单 × 路径规则 × 命令黑名单 × 责任链评估
+- **🤖 多智能体协调**：并行 / 顺序执行多 Agent，支持 Team 角色管理
+- **🌐 MCP 协议客户端**：内置 stdio + HTTP 双传输的 MCP 客户端，动态发现远端工具
+- **🎯 插件 & 技能体系**：Claude Code 兼容的 plugin manifest + Markdown YAML frontmatter 技能
+- **🔗 Hook 生命周期**：`SESSION_START` / `STOP` / `USER_PROMPT_SUBMIT` / `SUBAGENT_STOP` 等事件钩子
+- **💾 会话快照 & 记忆**：JSON 持久化的会话快照 + 跨会话分类记忆
+- **⏰ Cron 定时任务**：基于 `ScheduledExecutorService` 的定时调度
+- **🧠 上下文管理**：消息压缩 (token 预算) + CLAUDE.md 项目上下文注入
+- **🛡️ 架构守卫**：ArchUnit + Maven Enforcer 保证分层依赖方向不退化
 
 ---
 
@@ -58,663 +32,410 @@ JHarness 支持**交互式终端界面（TUI）**和**单次查询模式**，适
 
 ### 环境要求
 
-- **Java 17** 或更高版本
-- **Maven 3.x**
-- OpenAI 兼容 API Key（任意兼容 OpenAI Chat Completions 协议的端点，如 OpenAI、DeepSeek、Qwen、Kimi 等）
+- **Java 17+**
+- **Maven 3.6.3+**
+- （可选）本地 [Ollama](https://ollama.com) 或任意 OpenAI 兼容端点
 
-### 构建项目
+### 构建
 
 ```bash
-# 克隆仓库
 git clone <repo-url>
 cd jharness
-
-# 编译打包（生成包含所有依赖的 fat jar）
-mvn clean package -DskipTests
-
-# 生成的 jar 位于 target/jharness-0.1.0-SNAPSHOT.jar
-```
-
-### 配置 API Key
-
-```bash
-# 通过环境变量配置（优先 OPENAI_API_KEY，兼容 ANTHROPIC_API_KEY）
-export OPENAI_API_KEY="your-api-key"
-# 可选：自定义端点，默认指向官方 https://api.openai.com/v1
-export OPENAI_BASE_URL="https://api.deepseek.com/v1"
-export OPENAI_MODEL="deepseek-chat"
-
-# 或通过配置文件（~/.jharness/settings.json）配置 apiKey / baseUrl / model
+mvn clean package
 ```
 
 ### 运行
 
+**模式 1：本地 Ollama（默认，无需 API Key）**
+
 ```bash
-# 交互式模式
+ollama pull qwen3.5:4b
 java -jar target/jharness-0.1.0-SNAPSHOT.jar
-
-# 启用 TUI 界面
-java -jar target/jharness-0.1.0-SNAPSHOT.jar --tui
-
-# 单次查询模式
-java -jar target/jharness-0.1.0-SNAPSHOT.jar -p "解释这段代码的功能"
-
-# 指定模型
-java -jar target/jharness-0.1.0-SNAPSHOT.jar -m claude-3-5-sonnet
-
-# 全自动权限模式
-java -jar target/jharness-0.1.0-SNAPSHOT.jar --permission-mode full_auto
-
-# 调试模式
-java -jar target/jharness-0.1.0-SNAPSHOT.jar -d
-
-# 继续上一次会话
-java -jar target/jharness-0.1.0-SNAPSHOT.jar -c
-
-# 恢复指定会话
-java -jar target/jharness-0.1.0-SNAPSHOT.jar -r <session-id>
 ```
 
-### 命令行参数
+**模式 2：远端 OpenAI 兼容 API**
 
-| 参数 | 说明 | 默认值 |
-|------|------|--------|
-| `-p, --print` | 单次查询模式，直接执行提示并输出结果 | - |
-| `-m, --model` | 指定使用的 LLM 模型 | 默认模型 |
-| `-d, --debug` | 启用调试模式 | `false` |
-| `-c, --continue` | 继续上一次会话 | `false` |
-| `-r, --resume` | 恢复指定会话 ID | - |
-| `--permission-mode` | 权限模式：`default`, `full_auto`, `plan` | `default` |
-| `--max-turns` | 最大对话轮次 | `8` |
-| `--output-format` | 输出格式：`text`, `json`, `stream-json` | `text` |
-| `--tui` | 启用终端用户界面 | `false` |
+```bash
+export OPENAI_API_KEY=sk-xxx
+export OPENAI_BASE_URL=https://api.deepseek.com/v1
+export OPENAI_MODEL=deepseek-chat
+java -jar target/jharness-0.1.0-SNAPSHOT.jar
+```
+
+**模式 3：单次查询**
+
+```bash
+java -jar target/jharness-0.1.0-SNAPSHOT.jar -p "解释 src/main/java/io/leavesfly/jharness/JHarnessApplication.java"
+```
+
+**模式 4：Lanterna TUI**
+
+```bash
+java -jar target/jharness-0.1.0-SNAPSHOT.jar --tui
+```
+
+### 常用 CLI 选项
+
+| 选项 | 说明 |
+|------|------|
+| `-p, --print <prompt>` | 单次查询模式 |
+| `-m, --model <name>` | 临时指定模型 |
+| `-d, --debug` | 调试日志 |
+| `-c, --continue` | 继续上一次会话 |
+| `-r, --resume <id>` | 恢复指定会话 |
+| `--permission-mode <m>` | `default` / `full_auto` / `plan` |
+| `--max-turns <n>` | 最大 ReAct 轮数（默认 8） |
+| `--output-format <fmt>` | `text` / `json` / `stream-json` |
+| `--tui` | 启用 Lanterna 终端界面 |
 
 ---
 
-## 🏗️ 架构概览
+## 🏗️ 架构总览
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                     JHarnessApplication                     │
-│                    (Picocli CLI 入口)                        │
+│                    UI 层 (ui + app.cli)                       │
+│   TerminalUI(Lanterna) · ConsoleInteractiveSession · CLI     │
 ├─────────────────────────────────────────────────────────────┤
-│                                                             │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌────────────┐  │
-│  │ TUI 界面  │  │ UI 组件  │  │ 状态管理  │  │  快捷键绑定 │  │
-│  │(Lanterna) │  │(Widgets) │  │(AppState)│  │(Keybinding)│  │
-│  └────┬─────┘  └────┬─────┘  └────┬─────┘  └────────────┘  │
-│       │              │             │                         │
-│  ┌────▼──────────────▼─────────────▼──────────────────────┐  │
-│  │                   QueryEngine                          │  │
-│  │          (核心查询循环 / ReAct Loop)                     │  │
-│  │  ┌─────────────┐  ┌──────────────┐  ┌──────────────┐  │  │
-│  │  │ LLM API 调用 │  │  工具执行引擎  │  │  消息压缩服务 │  │  │
-│  │  └──────┬──────┘  └──────┬───────┘  └──────────────┘  │  │
-│  └─────────┼────────────────┼────────────────────────────┘  │
-│            │                │                                │
-│  ┌─────────▼──────┐  ┌─────▼────────────────────────────┐   │
-│  │  OpenAiApi     │  │         ToolRegistry              │   │
-│  │ Client (SSE)   │  │  ┌────┐┌────┐┌────┐┌────┐┌────┐  │   │
-│  │ + RetryPolicy  │  │  │Bash││File││Grep││Web ││LSP │  │   │
-│  └────────────────┘  │  │Tool││Read││Tool││Srch││Tool│  │   │
-│                      │  └────┘└────┘└────┘└────┘└────┘  │   │
-│  ┌────────────────┐  │  + 35 more tools...               │   │
-│  │PermissionCheck │  └──────────────────────────────────┘   │
-│  │ er (权限检查)   │                                         │
-│  └────────────────┘  ┌──────────────────────────────────┐   │
-│                      │        扩展系统                     │   │
-│  ┌────────────────┐  │  ┌──────┐┌──────┐┌─────┐┌─────┐  │   │
-│  │ SessionStorage │  │  │Plugin││Skill ││Hook ││ MCP │  │   │
-│  │ (会话持久化)    │  │  │System││System││Sys. ││Clnt │  │   │
-│  └────────────────┘  │  └──────┘└──────┘└─────┘└─────┘  │   │
-│                      └──────────────────────────────────┘   │
-│  ┌────────────────┐  ┌──────────────────────────────────┐   │
-│  │  CostTracker   │  │     AgentOrchestrator             │   │
-│  │  (成本追踪)     │  │     (多智能体协调)                  │   │
-│  └────────────────┘  └──────────────────────────────────┘   │
-│                                                             │
-│  ┌────────────────┐  ┌──────────────────────────────────┐   │
-│  │ MemoryManager  │  │  BackgroundTaskManager / Cron     │   │
-│  │ (记忆管理)      │  │  (后台任务 / 定时任务)              │   │
-│  └────────────────┘  └──────────────────────────────────┘   │
+│                       内核层 (kernel)                         │
+│  QueryEngine ─ ReAct 循环 / SSE 流式 / 工具调度 / 取消         │
+│    ├─ MessageCompactionService (token 预算压缩)               │
+│    ├─ CostTracker / ModelPricing / TokenEstimator             │
+│    ├─ ToolCallDispatcher (并行 + 权限 + 超时)                 │
+│    ├─ PlanStepRunner / PlanModeInterceptor                    │
+│    └─ HookEmitterBridge                                       │
+│  spi: LlmGateway · ToolCatalog · PermissionGate (反向依赖隔离)│
+│  memory · edit · plan · state                                 │
+├──────────────┬───────────────────┬──────────────────────────┤
+│ capability   │ extension         │ integration              │
+│ ─ hook       │ ─ plugins         │ ─ api (OpenAI/SSE/重试)  │
+│ ─ permission │ ─ skills          │ ─ mcp (stdio + HTTP)     │
+│ ─ session    │                   │ ─ cron                   │
+│ ─ task       │                   │ ─ bridge                 │
+│ ─ coordination                                               │
+├─────────────────────────────────────────────────────────────┤
+│           tools.builtin (40+)    ·    command.builtin (60+)  │
+│   file · shell · web · code · task · agent · mcp · cron ...  │
 └─────────────────────────────────────────────────────────────┘
 ```
 
-### 核心执行流程
+### 核心 ReAct 流程
 
 ```
-用户输入 → QueryEngine.submitMessage()
-         → LLM API 调用 (SSE 流式)
-         → 解析响应 (文本 / 工具调用)
-         → 权限检查 (PermissionChecker)
-         → 工具执行 (并行 / 顺序)
-         → 结果反馈给 LLM
-         → 循环直到完成或达到最大轮次
+用户输入 → QueryEngine.submitMessage(prompt)
+        → USER_PROMPT_SUBMIT Hook
+        → LLM 流式调用（OpenAiApiClient + SSE）
+        → 解析 ContentBlock (Text / ToolUse)
+        → ToolCallDispatcher 并行执行工具
+            ├─ PermissionChecker 责任链评估
+            ├─ 异步执行（CompletableFuture）
+            └─ ToolResultBlock 写回消息
+        → STOP Hook
+        → 循环至无 ToolUse / 达到 maxTurns / 被 cancel
+        → SessionPersister 自动保存快照
 ```
 
 ---
 
-## 📦 模块详解
-
-### 项目结构
+## 📦 项目结构
 
 ```
 src/main/java/io/leavesfly/jharness/
-├── JHarnessApplication.java    # 应用主入口 (Picocli CLI)
-├── core/                       # 核心层
-│   ├── Settings.java           # 配置加载与默认目录（~/.jharness）
-│   ├── MemoryManager.java      # 跨会话记忆管理
-│   └── engine/                 # 查询引擎
-│       ├── QueryEngine.java    # ReAct 查询循环 + 消息压缩 + 成本追踪
-│       ├── CostTracker.java    # Token 成本追踪
-│       ├── model/              # 消息 / 内容块数据模型
-│       └── stream/             # 流式事件（文本增量、工具执行）
-├── integration/                # 外部集成层
-│   ├── api/                    # LLM API 客户端
-│   │   ├── OpenAiApiClient.java # OpenAI 兼容协议客户端 (SSE 流式)
-│   │   ├── retry/              # 指数退避重试策略
-│   │   └── errors/             # API 异常体系
-│   ├── mcp/                    # MCP 协议客户端 (stdio / HTTP)
-│   └── CronRegistry.java       # Cron 定时任务调度
-├── tools/                      # 工具系统 (40+ 内置工具)
-│   ├── BaseTool.java           # 工具抽象基类
-│   ├── ToolRegistry.java       # 工具注册表
-│   └── input/                  # 工具输入模型
-├── command/                    # 斜杠命令系统
-│   └── commands/               # 命令注册表 + 50+ 命令处理器
-├── extension/                  # 扩展系统
-│   ├── plugins/                # 插件加载与清单
-│   └── skills/                 # Markdown + YAML 技能
-├── agent/                      # Agent 能力
-│   ├── hooks/                  # Hook 生命周期系统
-│   ├── coordinator/            # 多智能体协调 / Team
-│   └── tasks/                  # 后台 Shell / Agent 任务
-├── session/                    # 会话与安全
-│   ├── sessions/               # 会话快照持久化
-│   └── permissions/            # 权限系统（模式 + 黑白名单 + 路径规则）
-├── prompts/                    # 系统提示词构建（含 CLAUDE.md 注入）
-├── ui/tui/                     # 终端交互 UI（Console / Lanterna）
-└── util/                       # 工具类（Jackson / URL 安全 / 日志等）
-```
-
-### 核心模块说明
-
-| 模块 | 说明 |
-|------|------|
-| **core.engine** | 核心查询引擎，实现 ReAct 循环（LLM 调用 → 工具执行 → 结果反馈），支持多工具并行执行、消息压缩与取消 |
-| **integration.api** | OpenAI 兼容协议 API 客户端（OpenAI / DeepSeek / Qwen / Kimi 等），基于 OkHttp + SSE 实现流式响应，内置指数退避重试策略 |
-| **tools** | 工具系统，提供 40+ 内置工具，支持异步执行和自动 JSON Schema 生成 |
-| **commands** | 斜杠命令系统，提供 50+ 交互式命令（`/help`, `/config`, `/git` 等） |
-| **plugins** | 插件系统，支持从 `~/.jharness/plugins/` 和项目目录加载插件 |
-| **skills** | 技能系统，通过 Markdown + YAML frontmatter 定义可复用 AI 技能 |
-| **hooks** | Hook 系统，在 `SESSION_START/END`、`PRE/POST_TOOL_USE` 等事件点注入逻辑 |
-| **mcp** | MCP 协议客户端，支持 stdio 和 HTTP 传输，动态发现和注册 MCP 工具 |
-| **coordinator** | 多智能体协调器，支持并行/顺序执行多个 Agent 任务和团队管理 |
-| **permissions** | 权限系统，三级模式 + 工具白/黑名单 + 路径规则 + 命令黑名单 |
-| **memory** | 跨会话记忆管理，支持分类、搜索和自动清理 |
-| **sessions** | 会话快照持久化，JSON 格式存储，支持列表和恢复 |
-
----
-
-## 🔧 内置工具
-
-JHarness 提供 **40+ 内置工具**，覆盖文件操作、代码智能、系统命令、网络搜索等多个领域：
-
-### 文件操作
-
-| 工具 | 说明 |
-|------|------|
-| `read_file` | 读取文件内容，支持按行范围读取 |
-| `write_file` | 写入文件内容 |
-| `edit_file` | 在文件中查找并替换文本 |
-| `glob` | 使用 glob 模式查找文件（如 `**/*.java`） |
-| `grep` | 在文件内容中搜索文本，支持正则表达式 |
-
-### 代码智能
-
-| 工具 | 说明 |
-|------|------|
-| `lsp` | LSP 代码智能：符号提取、定义跳转、引用查找、悬停信息（支持 Java / Python） |
-| `notebook_edit` | 创建或编辑 Jupyter Notebook 单元格 |
-
-### 系统命令
-
-| 工具 | 说明 |
-|------|------|
-| `bash` | 执行 Shell 命令并返回输出，支持超时控制 |
-| `sleep` | 延迟执行 |
-
-### 网络工具
-
-| 工具 | 说明 |
-|------|------|
-| `web_search` | 网络搜索（基于 DuckDuckGo） |
-| `web_fetch` | 获取网页内容 |
-
-### 任务管理
-
-| 工具 | 说明 |
-|------|------|
-| `todo_write` | 创建和管理任务列表 |
-| `task_create` | 创建后台 Shell 任务 |
-| `task_get` / `task_list` | 查询任务状态 |
-| `task_stop` | 停止后台任务 |
-| `task_output` / `task_update` | 获取任务输出 / 更新任务 |
-
-### Agent 与团队
-
-| 工具 | 说明 |
-|------|------|
-| `agent_spawn` | 生成子 Agent 处理复杂任务 |
-| `send_message` | 向 Agent 发送消息 |
-| `team_create` / `team_delete` | 创建 / 删除多智能体团队 |
-| `ask_user_question` | 向用户提问 |
-
-### MCP 工具
-
-| 工具 | 说明 |
-|------|------|
-| `list_mcp_resources` | 列出 MCP 资源 |
-| `read_mcp_resource` | 读取 MCP 资源 |
-| `mcp_auth` | MCP 认证 |
-| `mcp_tool_adapter` | 动态 MCP 工具适配器 |
-
-### 定时任务
-
-| 工具 | 说明 |
-|------|------|
-| `cron_create` | 创建 Cron 定时任务 |
-| `cron_list` / `cron_delete` | 列出 / 删除 Cron 任务 |
-| `remote_trigger` | 远程触发 Cron 任务 |
-
-### 其他
-
-| 工具 | 说明 |
-|------|------|
-| `config` | 运行时配置管理 |
-| `brief` | 生成内容摘要 |
-| `tool_search` | 搜索可用工具 |
-| `enter_plan_mode` / `exit_plan_mode` | 进入 / 退出计划模式 |
-| `enter_worktree` / `exit_worktree` | 进入 / 退出 worktree 模式 |
-| `skill` | 执行预定义技能 |
-
----
-
-## ⌨️ 斜杠命令
-
-在交互式模式下，输入 `/` 开头的命令进行快捷操作：
-
-### 基础命令
-
-| 命令 | 说明 |
-|------|------|
-| `/help` | 显示可用命令列表 |
-| `/exit` | 退出程序 |
-| `/clear` | 清空对话历史 |
-| `/status` | 查看会话状态 |
-| `/version` | 查看版本信息 |
-
-### 配置命令
-
-| 命令 | 说明 |
-|------|------|
-| `/config` | 配置管理 |
-| `/model` | 切换 LLM 模型 |
-| `/permissions` | 权限模式配置 |
-| `/theme` | 主题设置 |
-| `/keybindings` | 快捷键绑定 |
-
-### 会话命令
-
-| 命令 | 说明 |
-|------|------|
-| `/resume` | 恢复历史会话 |
-| `/export` | 导出会话记录 |
-| `/share` | 分享会话 |
-| `/compact` | 压缩会话消息 |
-| `/rewind` | 回滚会话 |
-| `/context` | 上下文管理 |
-
-### Git 命令
-
-| 命令 | 说明 |
-|------|------|
-| `/diff` | 查看 Git diff |
-| `/branch` | Git 分支管理 |
-| `/commit` | Git 提交 |
-| `/files` | Git 文件状态 |
-
-### 系统命令
-
-| 命令 | 说明 |
-|------|------|
-| `/memory` | 记忆管理 |
-| `/usage` / `/cost` | 使用量 / 成本统计 |
-| `/hooks` | Hook 管理 |
-| `/mcp` | MCP 服务管理 |
-| `/cron` | Cron 任务管理 |
-| `/plugin` | 插件管理 |
-| `/doctor` | 系统诊断 |
-| `/bridge` | 桥接配置 |
-
----
-
-## 🔌 插件系统
-
-JHarness 支持通过插件扩展功能，插件可以包含自定义技能、Hook 和 MCP 配置。
-
-### 插件目录
-
-- **用户级插件**：`~/.jharness/plugins/`
-- **项目级插件**：`<project-dir>/.jharness/plugins/`
-
-### 插件结构
-
-```
-my-plugin/
-├── plugin.json              # 插件清单文件
-├── skills/                  # 自定义技能目录
-│   └── my-skill.md
-├── hooks.json               # Hook 定义
-└── mcp.json                 # MCP 服务配置
-```
-
-### 插件清单 (`plugin.json`)
-
-```json
-{
-  "name": "my-plugin",
-  "version": "1.0.0",
-  "description": "我的自定义插件",
-  "enabledByDefault": true,
-  "skillsDir": "skills",
-  "hooksFile": "hooks.json",
-  "mcpFile": "mcp.json"
-}
+├── JHarnessApplication.java         # Picocli 主入口（仅 CLI 选项 + 编排）
+│
+├── app/                             # 应用引导
+│   ├── bootstrap/
+│   │   ├── QueryEngineBuilder.java  # 装配 QueryEngine 全链路
+│   │   ├── PluginBootstrap.java     # 插件加载 + Agent 注册
+│   │   └── McpBootstrap.java        # MCP 注册 + CLAUDE.md 注入
+│   └── cli/
+│       ├── CliRunners.java          # print / interactive 模式入口
+│       ├── CliConsole.java
+│       └── SessionRestorer.java     # --continue / --resume
+│
+├── kernel/                          # 内核层
+│   ├── engine/
+│   │   ├── QueryEngine.java         # ReAct 循环主体
+│   │   ├── CostTracker.java         # token / USD 追踪
+│   │   ├── ModelPricing.java
+│   │   ├── TokenEstimator.java
+│   │   ├── MessageCompactionService.java
+│   │   ├── BudgetExceededException.java
+│   │   ├── model/                   # ConversationMessage / ContentBlock / ...
+│   │   ├── stream/                  # StreamEvent / AssistantTextDelta / ...
+│   │   ├── tools/                   # ToolCallDispatcher / PlanStepRunner / PlanModeInterceptor
+│   │   └── hooks/HookEmitterBridge.java
+│   ├── spi/                         # SPI（kernel 不依赖具体实现）
+│   │   ├── LlmGateway.java
+│   │   ├── ToolCatalog.java
+│   │   └── PermissionGate.java
+│   ├── memory/MemoryManager.java
+│   ├── edit/                        # EditHistoryManager / EditRecord / DiffUtils
+│   ├── plan/                        # ExecutionPlan / PlanStep
+│   └── state/                       # AppState / AppStateStore
+│
+├── integration/                     # 外部集成
+│   ├── api/                         # LLM API
+│   │   ├── OpenAiApiClient.java     # implements LlmProvider extends LlmGateway
+│   │   ├── ApiMessageCompleteEvent.java
+│   │   ├── openai/                  # HttpClient/UrlResolver/RequestBuilder/SseReader/ErrorClassifier
+│   │   ├── retry/RetryPolicy.java
+│   │   └── errors/                  # RateLimit / Authentication 等
+│   ├── mcp/
+│   │   ├── McpClientManager.java
+│   │   ├── types/                   # McpServerConfig / McpConnectionStatus
+│   │   └── session/                 # StdioMcpSession / HttpMcpSession / McpJsonRpc
+│   ├── cron/CronRegistry.java
+│   └── bridge/                      # BridgeSessionManager / WorkSecretHelper
+│
+├── tools/                           # 工具系统
+│   ├── BaseTool.java
+│   ├── ToolRegistry.java
+│   ├── ToolResult.java / ToolExecutionContext.java
+│   ├── input/                       # 各工具输入 DTO
+│   └── builtin/                     # 40+ 工具
+│       ├── file/    # FileRead/Write/Edit/MultiEdit/UndoEdit/Glob/Grep
+│       ├── shell/   # Bash/Sleep + session/
+│       ├── web/     # WebFetch/WebSearch
+│       ├── code/    # LSP/NotebookEdit
+│       ├── task/    # TodoWrite + TaskCreate/Get/List/Stop/Output/Update
+│       ├── agent/   # Agent/SendMessage/TeamCreate/TeamDelete/AskUserQuestion
+│       ├── mcp/     # ListMcpResources/ReadMcpResource/McpAuth/McpToolAdapter
+│       ├── cron/    # CronCreate/List/Delete/RemoteTrigger
+│       ├── mode/    # EnterPlanMode/ExitPlanMode/EnterWorktree/ExitWorktree
+│       ├── meta/    # Brief/Skill/ToolSearch
+│       └── config/  # ConfigTool
+│
+├── command/                         # 斜杠命令
+│   ├── SlashCommand.java / CommandContext.java / CommandResult.java
+│   ├── CommandRegistry.java
+│   ├── SimpleSlashCommand.java
+│   ├── PluginSlashCommand.java
+│   ├── keybindings/
+│   └── builtin/
+│       ├── git/    · agent/    · config/    · session/    · system/
+│
+├── extension/
+│   ├── plugins/  # PluginLoader / PluginManifest / PluginInstaller / trust / marketplace
+│   └── skills/   # SkillLoader / SkillRegistry / SkillDefinition
+│
+├── capability/                      # 能力模块（被 kernel 通过 SPI 引用）
+│   ├── hook/                        # HookEvent / HookExecutor / HookRegistry / runtime/*
+│   ├── permission/                  # PermissionChecker + rule/*
+│   ├── session/                     # SessionStorage / SessionSnapshot
+│   ├── task/                        # BackgroundTaskManager / TaskRecord
+│   └── coordination/                # AgentOrchestrator / TeamRegistry
+│
+├── config/
+│   ├── Settings.java
+│   └── SettingsBootstrap.java
+│
+├── prompt/
+│   ├── SystemPromptBuilder.java
+│   ├── ClaudeMdLoader.java
+│   └── outputstyles/
+│
+├── ui/
+│   ├── UI.java
+│   ├── tui/  # TerminalUI / ConsoleInteractiveSession / AnsiConsole / MarkdownRenderer
+│   ├── backend/BackendHost.java
+│   └── widgets/  # StatusBar / InputWidget / TranscriptWidget
+│
+└── util/  # JacksonUtils / UrlSafetyValidator
 ```
 
 ---
 
-## 🎯 技能系统
+## 🔧 内置工具速览（40+）
 
-技能是预定义的 AI 行为模板，通过 Markdown 文件定义。
-
-### 技能加载层级
-
-1. **内置技能** — classpath resources 中的预置技能
-2. **用户技能** — `~/.jharness/skills/*.md`
-3. **项目技能** — `<project-dir>/.jharness/skills/*.md`
-
-### 技能定义格式
-
-```markdown
----
-name: code-review
-description: 执行代码审查并提供改进建议
----
-
-你是一个代码审查专家。请对提供的代码进行以下方面的审查：
-
-1. 代码质量和可读性
-2. 潜在的 Bug 和安全问题
-3. 性能优化建议
-4. 最佳实践遵循情况
-```
-
----
-
-## 🔗 Hook 系统
-
-Hook 允许在 Agent 执行的关键生命周期点注入自定义逻辑。
-
-### 支持的事件
-
-| 事件 | 触发时机 |
-|------|----------|
-| `SESSION_START` | 会话开始时 |
-| `SESSION_END` | 会话结束时 |
-| `PRE_TOOL_USE` | 工具执行前 |
-| `POST_TOOL_USE` | 工具执行后 |
-
-### Hook 类型
-
-| 类型 | 说明 |
+| 类别 | 工具 |
 |------|------|
-| **Command** | 执行 Shell 命令，支持超时和环境变量注入 |
-| **HTTP** | 发送 POST 请求到指定 URL，支持自定义 Headers |
-| **Prompt** | LLM 验证（通过提示词进行检查） |
-| **Agent** | 深度 Agent 验证 |
+| **文件** | `read_file` · `write_file` · `edit_file` · `multi_edit` · `undo_edit` · `glob` · `grep` |
+| **Shell** | `bash`（持久化 session）· `sleep` |
+| **代码智能** | `lsp`（Java/Python 符号 / 定义 / 引用 / 悬停）· `notebook_edit` |
+| **网络** | `web_fetch` · `web_search`（DuckDuckGo） |
+| **任务** | `todo_write` · `task_create` · `task_get` · `task_list` · `task_stop` · `task_output` · `task_update` |
+| **Agent** | `agent_spawn` · `send_message` · `team_create` · `team_delete` · `ask_user_question` |
+| **MCP** | `list_mcp_resources` · `read_mcp_resource` · `mcp_auth` · `mcp_tool_adapter`（动态） |
+| **Cron** | `cron_create` · `cron_list` · `cron_delete` · `remote_trigger` |
+| **模式** | `enter_plan_mode` · `exit_plan_mode` · `enter_worktree` · `exit_worktree` |
+| **元工具** | `brief` · `skill` · `tool_search` · `config` |
 
-### Hook 配置示例
-
-```json
-{
-  "hooks": [
-    {
-      "event": "PRE_TOOL_USE",
-      "type": "command",
-      "pattern": "bash",
-      "command": "echo 'About to execute: $ARGUMENTS'",
-      "timeout": 10
-    }
-  ]
-}
-```
+详见 [`wiki/06-工具系统.md`](wiki/06-工具系统.md)。
 
 ---
 
-## 🌐 MCP 协议支持
+## ⌨️ 斜杠命令速览（60+）
 
-JHarness 内置完整的 [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) 客户端，支持连接外部 MCP 服务器以扩展工具和资源。
+| 类别 | 命令 |
+|------|------|
+| **基础** | `/help` · `/exit` · `/clear` · `/status` · `/version` · `/onboarding` · `/feedback` |
+| **配置** | `/config` · `/model` · `/permissions` · `/plan` · `/skills` · `/tasks` · `/mcp` · `/login` · `/logout` · `/theme` · `/doctor` · `/effort` · `/passes` · `/fast` · `/plugin` · `/reload-plugins` · `/init` |
+| **会话** | `/resume` · `/export` · `/share` · `/session` · `/tag` · `/rewind` · `/copy` · `/compact` · `/context` · `/summary` · `/bridge` |
+| **Git** | `/diff` · `/branch` · `/commit` · `/files` · `/issue` · `/pr-comments` |
+| **系统** | `/memory` · `/usage` · `/cost` · `/stats` · `/hooks` · `/vim` · `/voice` · `/outputstyle` · `/cd` · `/upgrade` · `/release-notes` · `/privacy` · `/ratelimit` · `/keybindings` |
+| **Agent / MCP / Cron** | `/agents` · `/mcp` · `/cron` |
 
-### 支持的传输方式
-
-- **stdio** — 通过子进程标准输入/输出通信（JSON-RPC）
-- **HTTP/HTTPS** — 通过 HTTP 请求通信
-
-### 配置 MCP 服务器
-
-在 `~/.jharness/settings.json` 或项目配置中添加：
-
-```json
-{
-  "mcpServers": {
-    "my-server": {
-      "transport": "stdio",
-      "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-filesystem"],
-      "env": {}
-    }
-  }
-}
-```
-
-MCP 服务器提供的工具会被自动发现并注册到 `ToolRegistry`，可直接被 Agent 调用。
-
----
-
-## 🤖 多智能体协调
-
-JHarness 支持多个 Agent 协同工作，适用于复杂任务的分解和并行处理。
-
-### 执行模式
-
-- **并行执行** (`executeParallel`) — 多个 Agent 同时执行独立任务
-- **顺序执行** (`executeSequential`) — Agent 按顺序执行，前序结果作为上下文传递
-- **单任务执行** (`executeSingle`) — 执行单个 Agent 任务
-
-### 团队管理
-
-通过 `TeamRegistry` 管理多智能体团队：
-
-- 创建团队并分配 Agent 角色
-- 动态添加/移除团队成员
-- 团队级别的任务分发
+详见 [`wiki/07-斜杠命令系统.md`](wiki/07-斜杠命令系统.md)。
 
 ---
 
 ## 🔒 权限系统
 
-JHarness 提供多层权限控制机制，确保 Agent 操作的安全性。
-
-### 权限模式
-
-| 模式 | 说明 |
+| 模式 | 行为 |
 |------|------|
-| **Default** | 默认模式：只读操作自动允许，写入/执行操作需要用户确认 |
-| **Full Auto** | 全自动模式：允许所有操作，无需确认 |
-| **Plan** | 计划模式：仅允许只读操作，阻止所有写入操作 |
+| `DEFAULT` | 只读自动放行，写入/执行前询问 |
+| `FULL_AUTO` | 所有操作放行（黑名单/路径规则依然生效） |
+| `PLAN` | 仅允许只读，阻断所有写入操作 |
 
-### 权限检查流程
+**评估责任链**（顺序不可重排）：
 
 ```
-工具调用 → 白名单检查 → 黑名单检查 → 路径规则检查 → 命令黑名单检查 → 模式决策
+DeniedToolsRule → DeniedCommandsRule → PathRulesRule → ModeDecisionRule
 ```
 
-### 权限决策结果
-
-- **允许** — 直接执行
-- **拒绝** — 阻止执行并返回原因
-- **需要确认** — 等待用户确认后执行
+即使 `FULL_AUTO` 也不会跳过黑名单 — "不弹确认框" ≠ "放弃安全校验"。详见 [`wiki/08-权限系统.md`](wiki/08-权限系统.md)。
 
 ---
 
-## ⚙️ 配置管理
+## 🔌 插件 & 技能
 
-### 配置文件
+- **插件目录**：`~/.jharness/plugins/`（用户级） + `<project>/.jharness/plugins/`（项目级）
+- **plugin.json** 字段对齐 Claude Code：`name` / `version` / `author` / `homepage` / `repository` / `license` / `keywords` / `skillsDir` / `hooksFile` / `mcpFile` / `commandsDir` / `agentsDir`
+- **技能层级**：内置（classpath） → 用户 → 项目
+- **技能定义**：Markdown + YAML frontmatter
 
-配置文件位于 `~/.jharness/settings.json`，支持多层配置覆盖：
+详见 [`wiki/10-插件与技能系统.md`](wiki/10-插件与技能系统.md)。
+
+---
+
+## 🌐 MCP 协议
+
+内置完整 [Model Context Protocol](https://modelcontextprotocol.io/) 客户端：
+
+- **传输**：stdio（子进程 JSON-RPC） + HTTP/HTTPS
+- **动态工具**：MCP 连接完成后由 `ToolRegistry#refreshMcpTools` 自动补注册
+- **安全栅栏**：stdio 子进程在 fork 前走 `PermissionGate` 评估
+
+```json
+{
+  "mcpServers": {
+    "filesystem": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem"]
+    }
+  }
+}
+```
+
+---
+
+## 🤖 多智能体协调
+
+`AgentOrchestrator` 提供三种执行模式：
+
+- **`executeParallel`** — 并行执行多个独立任务
+- **`executeSequential`** — 顺序执行，前序结果作为后续上下文
+- **`executeSingle`** — 单任务，结束后发射 `SUBAGENT_STOP` Hook
+
+线程池：命名 `jharness-agent-N`，有界队列 + `CallerRunsPolicy` 回压。详见 [`wiki/13-多智能体协调.md`](wiki/13-多智能体协调.md)。
+
+---
+
+## ⚙️ 配置
+
+### 加载优先级
 
 ```
-默认值 → 环境变量 → 配置文件
+默认值 → 环境变量 → 配置文件 → CLI 选项
 ```
 
 ### 环境变量
 
-| 环境变量 | 说明 |
-|----------|------|
-| `OPENAI_API_KEY` | OpenAI 兼容端点的 API 密钥（优先） |
-| `ANTHROPIC_API_KEY` | 兼容别名，当 `OPENAI_API_KEY` 未设置时使用 |
-| `OPENAI_BASE_URL` | OpenAI 兼容端点（默认 `https://api.openai.com/v1`） |
-| `OPENAI_MODEL` / `JHARNESS_MODEL` | 默认使用的模型名 |
-| `JHARNESS_HOOK_DEPTH` | Hook 递归深度（框架内部维护，一般无需手动设置） |
+| 变量 | 说明 |
+|------|------|
+| `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` | API 密钥 |
+| `OPENAI_BASE_URL` / `ANTHROPIC_BASE_URL` | API 端点 |
+| `OPENAI_MODEL` / `JHARNESS_MODEL` | 默认模型 |
+| `JHARNESS_MAX_TOKENS` | 最大输出 token |
+| `JHARNESS_HOOK_DEPTH` | Hook 递归深度（内部） |
 
-### 配置项
-
-配置涵盖以下维度：
-
-- **模型配置** — 模型名称、API 端点、Provider
-- **权限配置** — 权限模式、工具白/黑名单、路径规则
-- **UI 配置** — 主题、Vim 模式、语音模式
-- **MCP 配置** — MCP 服务器连接配置
-- **插件配置** — 插件启用/禁用
-
-### 数据目录
+### 默认数据目录
 
 ```
 ~/.jharness/
-├── settings.json          # 全局配置
-├── plugins/               # 用户级插件
-├── skills/                # 用户级技能
-├── sessions/              # 会话存储
-├── memories/              # 记忆存储
+├── settings.json
+├── plugins/              # 用户级插件
+├── skills/               # 用户级技能
 └── data/
-    └── cron_jobs.json     # Cron 任务定义
+    ├── sessions/         # 会话快照
+    ├── memories/         # 跨会话记忆
+    ├── tasks/            # 后台任务输出
+    └── cron_jobs.json    # Cron 定义
 ```
+
+完整配置项见 [`wiki/16-配置管理.md`](wiki/16-配置管理.md)。
 
 ---
 
-## 🛠️ 开发指南
+## 🛠️ 开发
 
 ### 自定义工具
 
-继承 `BaseTool<T>` 抽象类创建自定义工具：
-
 ```java
-public class MyTool extends BaseTool<MyToolInput> {
-
-    @Override
-    public String getName() {
-        return "my_tool";
-    }
-
-    @Override
-    public String getDescription() {
-        return "我的自定义工具";
-    }
-
-    @Override
-    public Class<MyToolInput> getInputClass() {
-        return MyToolInput.class;
-    }
-
-    @Override
-    public CompletableFuture<ToolResult> execute(
-            MyToolInput input, ToolExecutionContext context) {
-        // 实现工具逻辑
-        return CompletableFuture.completedFuture(
-            ToolResult.success("执行成功"));
-    }
-
-    @Override
-    public boolean isReadOnly(MyToolInput input) {
-        return true; // 只读工具无需权限确认
+public class MyTool extends BaseTool<MyInput> {
+    @Override public String getName() { return "my_tool"; }
+    @Override public String getDescription() { return "我的工具"; }
+    @Override public Class<MyInput> getInputClass() { return MyInput.class; }
+    @Override public boolean isReadOnly(MyInput input) { return true; }
+    @Override public CompletableFuture<ToolResult> execute(MyInput input, ToolExecutionContext ctx) {
+        return CompletableFuture.completedFuture(ToolResult.success("done"));
     }
 }
 ```
 
-### 注册工具
+输入 DTO 用 Jakarta Validation 注解（`@NotBlank` / `@NotNull` / `@NotEmpty`）标记必填字段，`BaseTool#toApiSchema` 反射生成 JSON Schema。
 
-通过 `ToolRegistry.withDefaults(...)` 获取内置工具集合，再调用 `register` 方法添加自定义工具，即可在下一次 `QueryEngine` 启动时生效（MCP 动态工具也会走同一流程）。
+### 项目上下文
 
-### 项目上下文文件
+在项目根创建 `CLAUDE.md`，`McpBootstrap.loadProjectContext` 自动注入到系统提示词。
 
-在项目根目录创建 `CLAUDE.md` 文件，JHarness 会自动加载并注入到系统提示词中：
-
-```markdown
-# 项目说明
-
-这是一个 Spring Boot 微服务项目...
-
-## 编码规范
-
-- 使用 Google Java Style
-- 所有 API 需要编写单元测试
-```
-
-### 运行测试
+### 测试
 
 ```bash
-# 运行所有测试
-mvn test
-
-# 运行特定测试类
-mvn test -Dtest=JHarnessComprehensiveTest
-
-# 代码格式化检查
-mvn spotless:check
-
-# 代码格式化
-mvn spotless:apply
+mvn test                  # 全量测试
+mvn spotless:check        # 代码格式检查
+mvn spotless:apply        # 自动格式化
 ```
+
+`pom.xml` 启用 Maven Enforcer（Java 17+ / Maven 3.6.3+ / `dependencyConvergence` / 禁止重复版本声明），ArchUnit 守卫分层依赖方向。
+
+详见 [`wiki/17-扩展开发指南.md`](wiki/17-扩展开发指南.md)。
 
 ---
 
-## 📚 技术栈
+## 📚 文档导航
 
-| 技术 | 版本 | 用途 |
-|------|------|------|
-| **Java** | 17+ | 运行时环境 |
-| **Picocli** | 4.7.5 | CLI 框架 |
-| **OkHttp** | 4.12.0 | HTTP 客户端 / SSE 支持 |
-| **Jackson** | 2.17.0 | JSON / YAML 序列化 |
-| **Lanterna** | 3.1.1 | 终端 UI 框架 |
-| **Jsoup** | 1.17.2 | HTML 解析（Web 搜索） |
-| **SnakeYAML** | 2.2 | YAML 解析 |
-| **SLF4J + Logback** | 2.0.12 / 1.5.3 | 日志框架 |
-| **Hibernate Validator** | 8.0.1.Final | Bean Validation |
-| **JUnit 5** | 5.10.2 | 单元测试 |
-| **Mockito** | 5.11.0 | Mock 测试 |
+| 文档 | 主题 |
+|------|------|
+| [`wiki/01-项目概述.md`](wiki/01-项目概述.md) | 定位、特性、与 OpenHarness 的关系 |
+| [`wiki/02-快速开始.md`](wiki/02-快速开始.md) | 环境、构建、模型对接 |
+| [`wiki/03-整体架构.md`](wiki/03-整体架构.md) | 分层、SPI、依赖治理 |
+| [`wiki/04-核心引擎-QueryEngine.md`](wiki/04-核心引擎-QueryEngine.md) | ReAct、流式、压缩、Hook |
+| [`wiki/05-API客户端.md`](wiki/05-API客户端.md) | OpenAI SSE、重试、Provider |
+| [`wiki/06-工具系统.md`](wiki/06-工具系统.md) | 40+ 工具、JSON Schema |
+| [`wiki/07-斜杠命令系统.md`](wiki/07-斜杠命令系统.md) | 60+ 命令、按键绑定 |
+| [`wiki/08-权限系统.md`](wiki/08-权限系统.md) | 模式、责任链、审计 |
+| [`wiki/09-会话与记忆.md`](wiki/09-会话与记忆.md) | SessionSnapshot、MemoryManager |
+| [`wiki/10-插件与技能系统.md`](wiki/10-插件与技能系统.md) | Plugin / Skill / 信任 / 市场 |
+| [`wiki/11-Hook系统.md`](wiki/11-Hook系统.md) | 8 事件 × 5 Runner |
+| [`wiki/12-MCP协议客户端.md`](wiki/12-MCP协议客户端.md) | stdio / HTTP、动态工具 |
+| [`wiki/13-多智能体协调.md`](wiki/13-多智能体协调.md) | Orchestrator、Team |
+| [`wiki/14-后台任务与Cron.md`](wiki/14-后台任务与Cron.md) | BackgroundTaskManager、CronRegistry |
+| [`wiki/15-TUI终端界面.md`](wiki/15-TUI终端界面.md) | Lanterna、Console、Widgets |
+| [`wiki/16-配置管理.md`](wiki/16-配置管理.md) | Settings 全字段 |
+| [`wiki/17-扩展开发指南.md`](wiki/17-扩展开发指南.md) | 自定义工具 / 命令 / 插件 / Hook / Provider |
 
 ---
 

@@ -1,115 +1,94 @@
-# JHarness 技术 Wiki
+# JHarness 文档索引
 
-> JHarness 是一个用 Java 17 实现的轻量级 AI Agent 框架，是 OpenHarness 项目的 Java 端口。本 Wiki 为项目提供系统化的技术参考文档。
-
-## 📚 文档导航
-
-### 一、入门与总览
-
-| 文档 | 说明 |
-|------|------|
-| [01-项目概述](01-项目概述.md) | 项目定位、核心特性、能力清单、代码规模 |
-| [02-快速开始](02-快速开始.md) | 环境准备、构建打包、首次运行、常见用法 |
-| [03-整体架构](03-整体架构.md) | 分层架构、核心执行流、模块依赖关系 |
-
-### 二、核心引擎
-
-| 文档 | 说明 |
-|------|------|
-| [04-核心引擎 QueryEngine](04-核心引擎-QueryEngine.md) | ReAct 循环、流式事件、消息管理、消息压缩、成本追踪 |
-| [05-API 客户端](05-API客户端.md) | OpenAI 兼容协议、SSE 流式、重试策略、错误体系 |
-
-### 三、工具与命令
-
-| 文档 | 说明 |
-|------|------|
-| [06-工具系统](06-工具系统.md) | `BaseTool`、`ToolRegistry`、40+ 内置工具分类详解 |
-| [07-斜杠命令系统](07-斜杠命令系统.md) | `CommandRegistry`、50+ 命令、处理器分类、快捷键 |
-
-### 四、安全与持久化
-
-| 文档 | 说明 |
-|------|------|
-| [08-权限系统](08-权限系统.md) | 三级模式、工具白/黑名单、路径规则、命令黑名单、审计日志 |
-| [09-会话与记忆](09-会话与记忆.md) | `SessionStorage`、`MemoryManager`、`BridgeSessionManager` |
-
-### 五、扩展机制
-
-| 文档 | 说明 |
-|------|------|
-| [10-插件与技能系统](10-插件与技能系统.md) | Plugin 清单、用户/项目级加载、Skill Markdown + YAML |
-| [11-Hook 系统](11-Hook系统.md) | 生命周期事件、Command/HTTP/Prompt/Agent 四类 Hook |
-| [12-MCP 协议客户端](12-MCP协议客户端.md) | stdio/HTTP 传输、工具发现、资源访问、SSRF 防护 |
-| [13-多智能体协调](13-多智能体协调.md) | `AgentOrchestrator`、并行/顺序执行、`TeamRegistry` |
-
-### 六、运行时与基础设施
-
-| 文档 | 说明 |
-|------|------|
-| [14-后台任务与 Cron](14-后台任务与Cron.md) | `BackgroundTaskManager`、`CronRegistry` 定时调度 |
-| [15-TUI 终端界面](15-TUI终端界面.md) | Lanterna、`TerminalUI`、`ConsoleInteractiveSession`、Widgets |
-| [16-配置管理](16-配置管理.md) | `Settings`、环境变量、多层覆盖、数据目录结构 |
-
-### 七、面向开发者
-
-| 文档 | 说明 |
-|------|------|
-| [17-扩展开发指南](17-扩展开发指南.md) | 自定义工具/命令/插件/技能/Hook 的开发流程 |
+JHarness 是一个 Java 实现的轻量级 AI Agent 框架。本 wiki 按"由表及里"的顺序组织：先讲项目定位与上手，再讲架构与核心引擎，最后逐一深入各能力模块与扩展机制。
 
 ---
 
-## 🗺️ 模块地图
+## 📖 阅读路径建议
+
+### 👋 新用户（5 分钟上手）
+
+1. [`01-项目概述.md`](01-项目概述.md) — 它能做什么、与 Claude Code / OpenHarness 的关系
+2. [`02-快速开始.md`](02-快速开始.md) — 装环境、起一个对话
+3. [`07-斜杠命令系统.md`](07-斜杠命令系统.md) — 学会用 `/help`、`/model`、`/permissions`
+
+### 🧑‍💻 二开 / 集成开发者
+
+1. [`03-整体架构.md`](03-整体架构.md) — 分层、SPI 隔离、依赖方向
+2. [`17-扩展开发指南.md`](17-扩展开发指南.md) — 写自定义工具 / 命令 / 插件 / Hook
+3. [`16-配置管理.md`](16-配置管理.md) — 配置字段全集、环境变量、数据目录
+
+### 🔬 架构 / 内核研究
+
+1. [`04-核心引擎-QueryEngine.md`](04-核心引擎-QueryEngine.md) — ReAct 循环、流式、压缩、取消
+2. [`05-API客户端.md`](05-API客户端.md) — OpenAI SSE 协议实现、重试、错误分类
+3. [`08-权限系统.md`](08-权限系统.md) — 责任链、模式决策、审计
+
+---
+
+## 📚 章节清单
+
+| 章节 | 主题 | 关键类 / 文件 |
+|------|------|--------------|
+| [01-项目概述](01-项目概述.md) | 定位、特性、与 OpenHarness 关系 | `JHarnessApplication` · `pom.xml` |
+| [02-快速开始](02-快速开始.md) | 环境、构建、首次启动、模型对接 | `Settings` · `SettingsBootstrap` |
+| [03-整体架构](03-整体架构.md) | 分层、SPI、依赖治理、ArchUnit | `kernel.spi.*` · `app.bootstrap.*` |
+| [04-核心引擎-QueryEngine](04-核心引擎-QueryEngine.md) | ReAct 循环、流式事件、压缩、取消、持久化 | `QueryEngine` · `ToolCallDispatcher` · `MessageCompactionService` |
+| [05-API客户端](05-API客户端.md) | OpenAI 协议 SSE、重试、错误分类、本地端点 | `OpenAiApiClient` · `OpenAiSseStreamReader` · `RetryPolicy` |
+| [06-工具系统](06-工具系统.md) | 40+ 内置工具 + JSON Schema 自动生成 | `BaseTool` · `ToolRegistry` · `tools.builtin.*` |
+| [07-斜杠命令系统](07-斜杠命令系统.md) | 60+ 命令、注册流程、按键绑定 | `CommandRegistry` · `command.builtin.*` |
+| [08-权限系统](08-权限系统.md) | 三种模式、责任链、审计、命令黑名单 | `PermissionChecker` · `capability.permission.rule.*` |
+| [09-会话与记忆](09-会话与记忆.md) | SessionSnapshot、自动保存、跨会话记忆 | `SessionStorage` · `MemoryManager` |
+| [10-插件与技能系统](10-插件与技能系统.md) | Plugin manifest、技能加载、信任与市场 | `PluginLoader` · `SkillLoader` · `TrustStore` · `MarketplaceRegistry` |
+| [11-Hook系统](11-Hook系统.md) | 8 种事件 × 5 种 Runner + 深度防护 | `HookExecutor` · `HookEvent` · `runtime.*HookRunner` |
+| [12-MCP协议客户端](12-MCP协议客户端.md) | stdio / HTTP 双传输、动态工具补注册 | `McpClientManager` · `StdioMcpSession` · `HttpMcpSession` |
+| [13-多智能体协调](13-多智能体协调.md) | 并行 / 顺序 / 单任务、Team 管理 | `AgentOrchestrator` · `TeamRegistry` |
+| [14-后台任务与Cron](14-后台任务与Cron.md) | 后台 Shell/Agent 任务、Cron 定时调度 | `BackgroundTaskManager` · `CronRegistry` |
+| [15-TUI终端界面](15-TUI终端界面.md) | Lanterna TUI、ConsoleInteractiveSession、Widgets | `TerminalUI` · `ConsoleInteractiveSession` · `MarkdownRenderer` |
+| [16-配置管理](16-配置管理.md) | Settings 全字段、环境变量、默认模板 | `Settings` · `SettingsBootstrap` · `defaults/settings.json` |
+| [17-扩展开发指南](17-扩展开发指南.md) | 自定义工具 / 命令 / 插件 / Hook / Provider | `BaseTool` · `SlashCommand` · `LlmGateway` |
+
+---
+
+## 🗺️ 模块速查（按代码包）
 
 ```
 io.leavesfly.jharness
-├── JHarnessApplication          # CLI 入口 (Picocli)
-├── core/                        # 核心运行时
-│   ├── engine/                  # QueryEngine + CostTracker + 消息压缩
-│   ├── edit/                    # 文件编辑历史 (DiffUtils)
-│   ├── plan/                    # 计划模式执行计划
-│   ├── state/                   # 应用状态
-│   ├── Settings                 # 全局配置
-│   └── MemoryManager            # 跨会话记忆
-├── integration/                 # 外部系统集成
-│   ├── api/                     # LLM API (OpenAI 兼容)
-│   ├── mcp/                     # MCP 协议客户端
-│   └── CronRegistry             # Cron 定时任务
-├── tools/                       # 40+ 内置工具
-├── command/                     # 斜杠命令 & 快捷键
-│   ├── commands/handlers/       # 命令处理器 (20+ 类)
-│   └── keybindings/
-├── agent/                       # 智能体运行层
-│   ├── hooks/                   # Hook 生命周期（HookDefinition / HookExecutor / HookRegistry）
-│   ├── tasks/                   # 后台任务（BackgroundTaskManager + TaskRecord + TaskStatus）
-│   └── coordinator/             # 多智能体编排（AgentOrchestrator + TeamRegistry + TeamRecord）
-├── session/                     # 会话与安全
-│   ├── permissions/             # 权限系统（PermissionChecker 等）
-│   ├── sessions/                # 会话持久化（SessionStorage + SessionSnapshot）
-│   └── bridge/                  # 桥接会话（BridgeSessionManager + WorkSecretHelper）
-├── extension/                   # 扩展机制
-│   ├── plugins/                 # PluginLoader + PluginInstaller + PluginManifest
-│   └── skills/                  # SkillLoader + SkillRegistry + SkillDefinition
-├── prompts/                     # 系统提示词 & 输出样式
-│                                # SystemPromptBuilder / ClaudeMdLoader / OutputStyleLoader
-├── ui/                          # 终端 UI
-│   ├── UI.java                  # 入口协调器
-│   ├── tui/                     # TerminalUI（Lanterna）+ ConsoleInteractiveSession
-│   │                            # + MarkdownRenderer + AnsiConsole
-│   ├── backend/                 # BackendHost（JSON Lines 协议）
-│   └── widgets/                 # StatusBar / TranscriptWidget / InputWidget
-└── util/                        # JacksonUtils / UrlSafetyValidator
+├── app.bootstrap    → 03、04、12         (装配链路)
+├── app.cli          → 02、04             (CLI 入口)
+├── kernel.engine    → 04                 (核心引擎)
+├── kernel.spi       → 03                 (SPI 隔离)
+├── kernel.memory    → 09                 (记忆)
+├── kernel.edit/plan/state → 04、17       (周边能力)
+├── integration.api  → 05                 (LLM API)
+├── integration.mcp  → 12                 (MCP)
+├── integration.cron → 14                 (Cron)
+├── integration.bridge → 07               (/bridge 命令)
+├── tools            → 06、17             (工具系统)
+├── command          → 07                 (斜杠命令)
+├── extension.plugins → 10                (插件)
+├── extension.skills  → 10                (技能)
+├── capability.hook    → 11               (Hook)
+├── capability.permission → 08            (权限)
+├── capability.session → 09               (会话)
+├── capability.task    → 14               (后台任务)
+├── capability.coordination → 13          (Agent 编排)
+├── config             → 16               (配置)
+├── prompt             → 04、10           (系统提示词)
+├── ui                 → 15               (UI)
+└── util               → 17               (工具类)
 ```
 
 ---
 
-## 🧭 阅读建议
+## 🔗 外部参考
 
-- **首次接触项目**：先读 [01](01-项目概述.md) → [02](02-快速开始.md) → [03](03-整体架构.md)，30 分钟内建立整体认识。
-- **开发者想扩展工具**：直接跳到 [06](06-工具系统.md) → [17](17-扩展开发指南.md)。
-- **关注安全模型**：重点阅读 [08 权限](08-权限系统.md) 与 [11 Hook](11-Hook系统.md)。
-- **关注运行时机制**：聚焦 [04 核心引擎](04-核心引擎-QueryEngine.md) 与 [05 API](05-API客户端.md)。
-- **二次集成外部系统**：阅读 [12 MCP](12-MCP协议客户端.md) 与 [13 多智能体](13-多智能体协调.md)。
+- [Model Context Protocol 规范](https://modelcontextprotocol.io/)
+- [Claude Code Plugin Manifest](https://docs.claude.com)（plugin.json 字段对齐参考）
+- [OpenAI Chat Completions API](https://platform.openai.com/docs/api-reference/chat)
+- [Picocli 文档](https://picocli.info/)
+- [Lanterna 终端 UI](https://github.com/mabe02/lanterna)
 
 ---
 
-> 本 Wiki 基于源码版本 `0.1.0-SNAPSHOT` 编写，若源码结构发生重大调整请同步更新。
+> 📝 反馈：发现文档与代码不符，请在仓库提 Issue 或直接 PR；本套 wiki 与 `src/main/java/io/leavesfly/jharness` 一一对应，重构后由维护者同步更新。

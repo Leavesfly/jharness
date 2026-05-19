@@ -1,258 +1,333 @@
-# 11 - Hook 系统
+# 11 · Hook 系统
 
-> 位于 `io.leavesfly.jharness.agent.hooks`。Hook 是在 Agent 生命周期关键节点执行的**外部动作**，可用于审计、拦截、自动化、合规校验。
+> 包路径：`io.leavesfly.jharness.capability.hook`
+>
+> 核心类：`HookExecutor`（编排者） + `HookRegistry` + `HookDefinition` + 5 类 `HookRunner`
+
+---
 
 ## 1. 设计目标
 
-- **事件驱动**：固定的几个生命周期事件，每个事件挂多个 Hook
-- **可阻断**：Hook 执行结果可以阻止 Agent 继续操作
-- **多形态**：shell 命令 / 模型提问 / HTTP 回调 / 子 Agent
-- **安全优先**：注入防御、递归防御、超时防御、输出爆炸防御
+Hook（钩子）是一种"在 Agent 生命周期关键节点插入用户自定义逻辑"的机制：
 
-## 2. 核心类
+- **生命周期钩子**：会话开始 / 结束 / 用户输入 / 引擎停止 / 子代理结束 / 通知
+- **多种执行方式**：本地 Shell / HTTP / 内联 Prompt 注入 / 子代理调用 / Java 子进程
+- **结构化输入输出**：通过 JSON 与外部进程通信，支持注入额外 prompt
+- **防止递归**：通过环境变量 `JHARNESS_HOOK_DEPTH` 限制嵌套层数（最大 10）
+- **安全集成**：与权限系统共用同一栅栏（参见 § 7）
 
-| 类 | 作用 |
-|---|------|
-| `HookEvent` | 生命周期事件枚举 |
-| `HookDefinition` | 抽象 Hook 定义（Jackson 多态） |
-| `HookRegistry` | 按事件存放 Hook 的注册表 |
-| `HookExecutor` | 异步执行 Hook，返回 `HookResult` |
-| `HookResult` | 执行结果 |
+---
 
-## 3. `HookEvent`：事件枚举
+## 2. Hook 事件
 
-典型事件（由 `QueryEngine` / `ToolExecutor` 触发）：
+`HookEvent` 枚举（共 8 类）：
 
-- `PRE_TOOL_USE` — 工具调用前
-- `POST_TOOL_USE` — 工具调用后
-- `USER_PROMPT_SUBMIT` — 用户输入提交时
-- `ASSISTANT_MESSAGE` — Assistant 消息产出后
-- `SESSION_START` / `SESSION_END`
-- （具体枚举值以 `HookEvent.java` 为准）
+| 事件 | 触发点 | 发射状态 |
+|------|--------|---------|
+| `SESSION_START` | `QueryEngineBuilder.build()` 装配完毕 | ✅ |
+| `SESSION_END` | 进程退出 / `engine.close()` 前 | ✅ |
+| `USER_PROMPT_SUBMIT` | `QueryEngine.submitMessage()` 入口（消息入队前） | ✅ |
+| `STOP` | `QueryEngine.submitMessage()` 正常返回 / 取消 / 超时 | ✅ |
+| `SUBAGENT_STOP` | `AgentOrchestrator.executeSingle()` 返回前 | ✅ |
+| `PRE_TOOL_USE` | 工具调用前 | ⚠️ 保留未发射 |
+| `POST_TOOL_USE` | 工具调用后 | ⚠️ 保留未发射 |
+| `NOTIFICATION` | 通用通知（预算 / MCP 重连等） | ⚠️ 保留未发射 |
 
-## 4. `HookDefinition`：四种子类
+**保留但未发射**的事件不会报错，只是不会被触发。
 
-用 `@JsonTypeInfo(use = Id.NAME, property = "type")` 做多态反序列化：
+发射方约定：payload 至少包含 `session_id` / `model` / `cwd`，各事件可扩展额外字段：
 
-| 子类 | `type` | 关键字段 | 默认阻断 |
-|------|--------|----------|----------|
-| `CommandHookDefinition` | `command` | `command`、`timeoutSeconds=30` | `false` |
-| `PromptHookDefinition` | `prompt` | `prompt`、`model`、`timeoutSeconds=30` | `true` |
-| `HttpHookDefinition` | `http` | `url`、`headers`、`timeoutSeconds=30` | `false` |
-| `AgentHookDefinition` | `agent` | `prompt`、`model`、`timeoutSeconds=60` | `true` |
+- `USER_PROMPT_SUBMIT`：`prompt`
+- `STOP`：`turns`、`cancelled`、`error`
+- `SUBAGENT_STOP`：`agent_name`、`result`
 
-**公共字段**：
-- `matcher`：匹配表达式（如工具名），不匹配就跳过该 Hook
-- `blockOnFailure`：失败时是否阻断 Agent
+---
 
-### 4.1 示例配置（`hooks.json`）
+## 3. Hook 定义（`HookDefinition`）
 
 ```json
 {
-  "pre_tool_use": [
+  "event": "session_start",
+  "type": "command",
+  "matcher": { "model": "qwen3.5:4b" },
+  "command": "/usr/local/bin/notify.sh",
+  "args": ["--event", "$EVENT"],
+  "env": { "TOKEN": "xxx" },
+  "timeoutMs": 5000,
+  "blocking": true
+}
+```
+
+字段：
+
+| 字段 | 必需 | 说明 |
+|------|------|------|
+| `event` | ✅ | Hook 事件名（lowercase 或 SNAKE_CASE） |
+| `type` | ✅ | `command` / `http` / `prompt` / `agent` / `java` |
+| `matcher` | 可选 | 条件匹配（按 model / cwd / 自定义键值） |
+| `timeoutMs` | 可选 | 单次执行超时（默认 30s） |
+| `blocking` | 可选 | true 等待执行完，false 异步触发后立即返回 |
+
+各 type 的额外字段见 § 5。
+
+---
+
+## 4. Hook 注册表
+
+`HookRegistry.register(event, definition)` 按事件分组：
+
+```java
+Map<HookEvent, List<Object>> hooksByEvent;
+
+List<HookDefinition> hooks = registry.get(HookEvent.SESSION_START);
+```
+
+来源：
+
+1. **全局配置** — `~/.jharness/hooks.json`
+2. **项目配置** — `<cwd>/.jharness/hooks.json`
+3. **插件** — 各插件的 `hooks.json`（详见 [10-插件与技能系统 § 3.1](10-插件与技能系统.md#31-目录结构)）
+
+---
+
+## 5. Hook Runner（5 类）
+
+`HookExecutor.executeHooks(event, payload)` 按 type 路由到对应 Runner：
+
+| type | Runner 类 | 用途 |
+|------|-----------|------|
+| `command` | `CommandHookRunner` | 执行本地 Shell |
+| `http` | `HttpHookRunner` | 调用 HTTP 端点 |
+| `prompt` | `PromptHookRunner` | 注入 prompt 到 LLM 系统消息 |
+| `agent` | `AgentHookRunner` | 唤起子代理处理事件 |
+| `java` | `JavaSubprocessHookRunner` | fork JVM 子进程执行 Java 类 |
+
+所有 Runner 实现 `HookRunner` 接口：
+
+```java
+public interface HookRunner {
+    HookResult run(HookDefinition def, HookRunContext ctx);
+}
+```
+
+### 5.1 CommandHookRunner
+
+执行 Shell 命令，参数 / 环境变量从 payload 注入：
+
+```json
+{
+  "event": "session_start",
+  "type": "command",
+  "command": "git",
+  "args": ["status", "--short"],
+  "env": { "EXTRA": "value" },
+  "timeoutMs": 5000
+}
+```
+
+- 通过 `SubprocessIo.exec(...)` 启动 `ProcessBuilder`
+- stdout 限制 64 KB，超出截断
+- 退出码非零 → `HookResult.failed`
+- **环境变量 `JHARNESS_HOOK_DEPTH`** 由 `HookDepthGuard` 自动 +1，超过 10 直接拒绝执行
+
+### 5.2 HttpHookRunner
+
+发 HTTP POST：
+
+```json
+{
+  "event": "stop",
+  "type": "http",
+  "url": "https://my-server/webhook",
+  "method": "POST",
+  "headers": { "Authorization": "Bearer xxx" },
+  "timeoutMs": 5000
+}
+```
+
+请求体是 payload 的 JSON 序列化。响应 200 时尝试解析为 `HookResult`，否则视为成功但无输出。
+
+URL 经过 `UrlSafetyValidator`（SSRF 防护）：禁止内网 IP、`file://`、`javascript://` 等危险协议。
+
+### 5.3 PromptHookRunner
+
+最轻量的 Runner，直接把 `prompt` 字段作为额外系统消息追加给下一次 LLM 调用：
+
+```json
+{
+  "event": "user_prompt_submit",
+  "type": "prompt",
+  "prompt": "（重要约定：所有回复要简短直接）"
+}
+```
+
+不发起任何 IO，性能最佳。
+
+### 5.4 AgentHookRunner
+
+把事件作为任务派发给指定子代理（参见 [13-多智能体协调](13-多智能体协调.md)）：
+
+```json
+{
+  "event": "subagent_stop",
+  "type": "agent",
+  "agentName": "summarizer",
+  "task": "总结子代理的执行结果"
+}
+```
+
+### 5.5 JavaSubprocessHookRunner
+
+fork JVM 子进程执行指定 Java Main 类：
+
+```json
+{
+  "event": "session_end",
+  "type": "java",
+  "mainClass": "com.example.MyHook",
+  "classpath": "/opt/hooks/my-hook.jar",
+  "args": ["--mode", "cleanup"]
+}
+```
+
+适合"已有 Java 代码资产"的场景，避免重复实现 Shell 包装。
+
+---
+
+## 6. 执行流程
+
+```
+QueryEngine.submitMessage(prompt)
+   ↓
+hookBridge.fire("USER_PROMPT_SUBMIT", payload)
+   ↓
+HookExecutor.executeHooks(USER_PROMPT_SUBMIT, payload)
+   ↓
+For each HookDefinition matched by HookMatcher:
+   ↓
+   route by def.type → 对应 Runner.run(def, ctx)
+   ↓
+   HookResult { success, output, additionalPrompt }
+   ↓
+合并所有 additionalPrompt 注入到 prompt 前面（如有）
+```
+
+### 6.1 Matcher 条件匹配
+
+`HookMatcher.matches(definition, ctx)`：
+
+- 若 `matcher` 为空 → 命中
+- 若 `matcher.model` 存在 → 与 `ctx.payload.model` 相等才命中
+- 若 `matcher.cwd` 存在 → 与 `ctx.payload.cwd` 相等才命中
+- 其他自定义键值用同样规则
+
+### 6.2 阻塞 vs 非阻塞
+
+- `blocking=true` 默认：串行等待
+- `blocking=false`：交给独立线程执行，主流程立即继续
+
+### 6.3 失败处理
+
+单个 Hook 失败被吞掉只记 warn 日志（避免 Hook bug 阻断主流程）；除非 `blocking=true` 且 `def.required=true`（保留字段，目前未启用）。
+
+---
+
+## 7. 与权限系统的集成
+
+Command Hook 子进程在执行前会走 `PermissionChecker` 评估：
+
+- `toolName = "hook:" + def.event`
+- `command = def.command + " " + String.join(" ", def.args)`
+- `readOnly = false`
+
+`PLAN` 模式下 Command Hook **不会执行**（一律 deny）。
+
+`HookDepthGuard`：通过环境变量 `JHARNESS_HOOK_DEPTH` 防止 Hook 链式触发新 JHarness 进程导致递归爆炸：
+
+```java
+public static final int MAX_HOOK_DEPTH = 10;
+```
+
+每次 fork 子进程时把当前深度 +1 写入子进程环境变量；启动时若发现已达上限，主进程直接拒绝再发射 Hook。
+
+---
+
+## 8. `/hooks` 命令
+
+| 命令 | 行为 |
+|------|------|
+| `/hooks list` | 列出所有已注册 hook（按事件分组） |
+| `/hooks add <json>` | 运行时添加（不持久化） |
+| `/hooks remove <id>` | 移除 |
+| `/hooks trigger <event>` | 手动触发（用于调试） |
+| `/hooks status` | 摘要 |
+
+由 `HooksCommand.createWithRegistry(registry)` 实现。
+
+---
+
+## 9. 配置示例
+
+`~/.jharness/hooks.json`：
+
+```json
+{
+  "session_start": [
     {
       "type": "command",
-      "matcher": "bash",
-      "command": "echo \"[audit] about to run bash\" >&2",
-      "timeout_seconds": 5,
-      "block_on_failure": false
-    },
-    {
-      "type": "prompt",
-      "matcher": "write|edit",
-      "prompt": "检查本次编辑是否会泄露密钥，若有则回 DENY",
-      "model": "qwen3-coder",
-      "block_on_failure": true
+      "command": "/usr/local/bin/notify",
+      "args": ["JHarness 启动"],
+      "timeoutMs": 3000
     }
   ],
-  "post_tool_use": [
+  "user_prompt_submit": [
+    {
+      "type": "prompt",
+      "prompt": "请用中文回答。"
+    },
     {
       "type": "http",
-      "url": "https://audit.example.com/tool",
-      "headers": { "Authorization": "Bearer X" },
-      "timeout_seconds": 10
+      "url": "https://logger.example.com/log",
+      "timeoutMs": 2000,
+      "blocking": false
+    }
+  ],
+  "stop": [
+    {
+      "type": "command",
+      "command": "/usr/local/bin/save-cost.sh",
+      "args": ["$SESSION_ID"]
     }
   ]
 }
 ```
 
-## 5. `HookRegistry`：注册表
+---
 
-```java
-public class HookRegistry {
-    private final Map<HookEvent, List<Object>> hooksByEvent;   // 每事件独立列表
+## 10. 关键类清单
 
-    void register(HookEvent event, Object hook);               // 注册
-    List<Object> get(HookEvent event);                         // 取全部
-    String summary();                                          // 摘要：事件 → 数量
-    void clear();
-}
-```
-
-注意 value 类型是 `List<Object>`：既可放 `HookDefinition`，也兼容原始 Map（插件通过 `hooks.json` 直接塞入反序列化后的 `Map` 时仍可工作，`HookExecutor` 会再做一次类型分发）。
-
-## 6. `HookExecutor`：执行引擎
-
-### 6.1 签名
-
-```java
-CompletableFuture<List<HookResult>> execute(HookEvent event, Map<String,Object> payload);
-```
-
-异步返回所有 Hook 的结果列表（顺序与注册顺序一致）。
-
-### 6.2 递归深度防御（S-2）
-
-Prompt/Agent Hook 会 fork 子进程调用 JHarness 本身，一旦子进程又触发 Hook 即 **Hook 风暴**。防御代码：
-
-```java
-private static final int MAX_HOOK_DEPTH = /* 配置 */;
-private static final ThreadLocal<Integer> HOOK_DEPTH = new ThreadLocal<>();
-
-int enterDepth = currentDepth();     // ThreadLocal 或 env JHARNESS_HOOK_DEPTH
-if (enterDepth >= MAX_HOOK_DEPTH) {
-    return CompletableFuture.completedFuture(List.of(
-        new HookResult("depth-guard", false, null, true,
-                       "Hook 递归深度超过上限 " + MAX_HOOK_DEPTH + "，已阻止继续触发")));
-}
-
-HOOK_DEPTH.set(enterDepth + 1);
-try { /* 执行 */ } finally { HOOK_DEPTH.remove(); }
-```
-
-fork 子进程时会把 `JHARNESS_HOOK_DEPTH` 写入环境变量，确保 **跨进程** 深度累计不被绕过。
-
-### 6.3 Command Hook 安全策略（S-2 核心）
-
-**关键原则：LLM 可控的 payload 绝不拼进命令行参数**，只通过三种安全通道：
-
-1. **stdin**：整条 payload 以 JSON 字符串写入子进程标准输入
-2. **环境变量 `OPENHARNESS_HOOK_PAYLOAD`**：完整负载
-3. **环境变量 `JHARNESS_ARGUMENTS`**：渲染后的 arguments 段
-
-另设：
-- `OPENHARNESS_HOOK_EVENT`：事件名
-- `JHARNESS_HOOK_DEPTH`：递归深度
-
-管理员如要在命令模板中使用，**必须加双引号**：
-
-```bash
-# 正确
-echo "$JHARNESS_ARGUMENTS" | jq .
-
-# 危险 —— 将被启发式规则 DANGEROUS_ARG_EMBED 拒绝
-result=$(curl ${JHARNESS_ARGUMENTS})
-result=`grep ${JHARNESS_ARGUMENTS} log`
-```
-
-拒绝逻辑：
-
-```java
-if (DANGEROUS_ARG_EMBED.matcher(command).find()) {
-    return new HookResult(hook.getType(), false, null, true,
-        "命令模板将 payload 嵌入到命令替换 $(...) / `...` 中，存在注入风险，已拒绝");
-}
-```
-
-### 6.4 与 PermissionChecker 联动（FP-3）
-
-```java
-public void setPermissionChecker(PermissionChecker permissionChecker) { ... }
-```
-
-注入后，Command Hook 在执行前还要过一遍 `PermissionChecker` 的命令黑名单与工具黑白名单。即使 `hooks.json` 由管理员预定义，也**不能绕过**集团级的命令禁用策略（如 `sudo rm`）。
-
-### 6.5 超时与输出控制
-
-- 超时后先 `Process#destroy`，必要时 `destroyForcibly` 防止子进程残留
-- 输出累计字节数设上限，超过就截断并打上 `[OUTPUT_TRUNCATED]`
-- stderr 与 stdout 分流记录
-
-### 6.6 Prompt / Agent Hook
-
-- `Prompt`：调用一次 LLM，要求其仅回答 ALLOW / DENY / REASON，用于轻量条件判断
-- `Agent`：fork 一个完整的 JHarness 子会话执行更复杂的验证逻辑（默认超时 60s）
-
-两者都默认 `blockOnFailure=true`，失败会阻断 Agent 继续。
-
-### 6.7 HTTP Hook
-
-- 使用 `UrlSafetyValidator.validate(url)` 过 SSRF 防御（详见 [08-权限系统 §9](08-权限系统.md)）
-- 仅允许 `http` / `https`
-- POST 事件负载 + 自定义 Headers，默认 30s 超时
-- 响应非 2xx 视为失败
-
-## 7. `HookResult`：执行结果
-
-```java
-public class HookResult {
-    String hookType;    // command / prompt / http / agent / depth-guard
-    boolean success;
-    String output;      // 可读输出（stdout / LLM 回复 / HTTP body）
-    boolean blocked;    // 是否要求阻断
-    String reason;      // 阻断原因或错误信息
-}
-```
-
-消费方（`QueryEngine` / `ToolExecutor`）的典型决策：
-
-```java
-List<HookResult> results = executor.execute(PRE_TOOL_USE, payload).join();
-for (HookResult r : results) {
-    if (r.isBlocked()) {
-        abortToolCall(r.getReason());
-        return;
-    }
-}
-```
-
-## 8. Hook 注册的三个来源
-
-| 来源 | 时机 | 入口 |
-|------|------|------|
-| 用户配置 | 启动时 | `~/.jharness/hooks.json` → `HookLoader` |
-| 项目配置 | 启动时 | `<cwd>/.jharness/hooks.json` |
-| 插件 | 启动时 | `LoadedPlugin.hooks` → 合入全局 Registry |
-
-合并策略：**追加**（同事件的多个 Hook 按顺序全部执行），不做去重。
-
-## 9. 与 QueryEngine 的联动点
-
-```
-QueryEngine.processUserInput
-  ├─ USER_PROMPT_SUBMIT ——→ Hook
-  └─ loop:
-       ├─ LLM streaming
-       ├─ 对每个 tool_use:
-       │    ├─ PRE_TOOL_USE  ——→ Hook（可阻断）
-       │    ├─ permissionChecker.evaluate
-       │    ├─ tool.execute
-       │    └─ POST_TOOL_USE ——→ Hook（记录 / 审计）
-       └─ ASSISTANT_MESSAGE  ——→ Hook
-QueryEngine.end
-  └─ SESSION_END             ——→ Hook
-```
-
-## 10. `/hooks` 命令
-
-由 `HookCommandHandler.createHooksCommand` 注册：
-
-- `/hooks list` — 列出所有已注册 Hook（按事件）
-- `/hooks reload` — 重新加载
-- 其余由实现类决定
-
-## 11. 最佳实践
-
-1. **命令 Hook 只做只读审计**：打日志、写指标、发通知
-2. **拦截性校验用 Prompt Hook**：让模型判断是否放行
-3. **跨系统集成用 HTTP Hook**：更易与安全中台对接
-4. **Agent Hook 代价高慎用**：每次都 fork 新会话，只在关键节点
-5. **务必设置合理的 `timeout_seconds`**：默认值（30/60s）对大多数场景偏大
+| 类 | 文件 | 行数 | 职责 |
+|----|------|------|------|
+| `HookEvent` | `hook/HookEvent.java` | 52 | 事件枚举 + 触发点注释 |
+| `HookExecutor` | `hook/HookExecutor.java` | 5.2 KB | 编排者，路由到 Runner |
+| `HookRegistry` | `hook/HookRegistry.java` | 64 | 按事件分组注册表 |
+| `HookResult` | `hook/HookResult.java` | — | 执行结果 DTO |
+| `HookDefinition` | `hook/schemas/HookDefinition.java` | 7.5 KB | Hook 配置模型 |
+| `HookRunner` | `hook/runtime/HookRunner.java` | — | Runner 接口 |
+| `HookMatcher` | `hook/runtime/HookMatcher.java` | 2.6 KB | 匹配条件 |
+| `HookRunContext` | `hook/runtime/HookRunContext.java` | 1.3 KB | 执行上下文 |
+| `HookDepthGuard` | `hook/runtime/HookDepthGuard.java` | 1.4 KB | 递归深度防护 |
+| `SubprocessIo` | `hook/runtime/SubprocessIo.java` | 2.7 KB | 子进程 IO 公共逻辑 |
+| `CommandHookRunner` | `hook/runtime/CommandHookRunner.java` | 6.1 KB | Shell 执行 |
+| `HttpHookRunner` | `hook/runtime/HttpHookRunner.java` | 4.4 KB | HTTP 调用 |
+| `PromptHookRunner` | `hook/runtime/PromptHookRunner.java` | 1.1 KB | Prompt 注入 |
+| `AgentHookRunner` | `hook/runtime/AgentHookRunner.java` | 1.1 KB | 唤起子代理 |
+| `JavaSubprocessHookRunner` | `hook/runtime/JavaSubprocessHookRunner.java` | 4.0 KB | Java 子进程 |
 
 ---
 
-## 🔗 相关文档
+## 11. 下一步
 
-- [08-权限系统](08-权限系统.md) — PermissionChecker 注入
-- [10-插件与技能系统](10-插件与技能系统.md) — 插件如何提供 hooks.json
-- [04-核心引擎 QueryEngine](04-核心引擎-QueryEngine.md) — 事件触发点
+- 引擎在哪些点发射 Hook → [04-核心引擎 § 9](04-核心引擎-QueryEngine.md#9-hook-集成)
+- 插件如何提供 hooks.json → [10-插件与技能系统 § 3.6](10-插件与技能系统.md#36-注入到-jharness)
+- 子代理事件 → [13-多智能体协调](13-多智能体协调.md)
