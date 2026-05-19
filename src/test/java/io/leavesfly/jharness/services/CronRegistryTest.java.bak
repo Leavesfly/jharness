@@ -1,4 +1,5 @@
 package io.leavesfly.jharness.services;
+import io.leavesfly.jharness.integration.cron.CronRegistry;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;

@@ -9,7 +9,7 @@ import io.leavesfly.jharness.kernel.engine.model.*;
 import io.leavesfly.jharness.kernel.engine.stream.StreamEvent;
 import io.leavesfly.jharness.kernel.engine.stream.ToolExecutionCompleted;
 import io.leavesfly.jharness.kernel.engine.stream.ToolExecutionStarted;
-import io.leavesfly.jharness.tools.EnterPlanModeTool;
+import io.leavesfly.jharness.tools.builtin.mode.EnterPlanModeTool;
 
 import io.leavesfly.jharness.capability.permission.PermissionChecker;
 import io.leavesfly.jharness.capability.permission.PermissionDecision;

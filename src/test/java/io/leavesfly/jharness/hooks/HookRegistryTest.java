@@ -1,4 +1,5 @@
 package io.leavesfly.jharness.hooks;
+import io.leavesfly.jharness.capability.hook.schemas.HookDefinition;
 
 import io.leavesfly.jharness.capability.hook.HookEvent;
 import io.leavesfly.jharness.capability.hook.HookRegistry;

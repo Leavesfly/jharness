@@ -1,10 +1,29 @@
 package io.leavesfly.jharness;
+import io.leavesfly.jharness.tools.builtin.web.WebFetchTool;
+import io.leavesfly.jharness.tools.builtin.shell.SleepTool;
+import io.leavesfly.jharness.tools.builtin.shell.BashTool;
+import io.leavesfly.jharness.tools.builtin.misc.TodoWriteTool;
+import io.leavesfly.jharness.tools.builtin.file.GrepTool;
+import io.leavesfly.jharness.tools.builtin.file.GlobTool;
+import io.leavesfly.jharness.tools.builtin.file.FileWriteTool;
+import io.leavesfly.jharness.tools.builtin.file.FileReadTool;
+import io.leavesfly.jharness.tools.builtin.file.FileEditTool;
+import io.leavesfly.jharness.tools.builtin.agent.AskUserQuestionTool;
 
 import io.leavesfly.jharness.config.Settings;
 import io.leavesfly.jharness.capability.permission.PermissionChecker;
 import io.leavesfly.jharness.capability.permission.PermissionMode;
 import io.leavesfly.jharness.tools.*;
-import io.leavesfly.jharness.tools.input.*;
+import io.leavesfly.jharness.tools.input.file.*;
+import io.leavesfly.jharness.tools.input.shell.*;
+import io.leavesfly.jharness.tools.input.web.*;
+import io.leavesfly.jharness.tools.input.code.*;
+import io.leavesfly.jharness.tools.input.task.*;
+import io.leavesfly.jharness.tools.input.cron.*;
+import io.leavesfly.jharness.tools.input.agent.*;
+import io.leavesfly.jharness.tools.input.mcp.*;
+import io.leavesfly.jharness.tools.input.mode.*;
+import io.leavesfly.jharness.tools.input.misc.*;
 import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 

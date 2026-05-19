@@ -1,10 +1,12 @@
 package io.leavesfly.jharness.tools;
+import io.leavesfly.jharness.tools.builtin.mode.ExitPlanModeTool;
+import io.leavesfly.jharness.tools.builtin.mode.EnterPlanModeTool;
 
 import io.leavesfly.jharness.config.Settings;
 import io.leavesfly.jharness.capability.permission.PermissionChecker;
 import io.leavesfly.jharness.capability.permission.PermissionMode;
-import io.leavesfly.jharness.tools.input.EnterPlanModeToolInput;
-import io.leavesfly.jharness.tools.input.ExitPlanModeToolInput;
+import io.leavesfly.jharness.tools.input.mode.EnterPlanModeToolInput;
+import io.leavesfly.jharness.tools.input.mode.ExitPlanModeToolInput;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 

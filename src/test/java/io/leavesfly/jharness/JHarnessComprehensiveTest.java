@@ -1,4 +1,15 @@
 package io.leavesfly.jharness;
+import io.leavesfly.jharness.tools.builtin.shell.SleepTool;
+import io.leavesfly.jharness.tools.builtin.shell.BashTool;
+import io.leavesfly.jharness.tools.builtin.mode.EnterPlanModeTool;
+import io.leavesfly.jharness.tools.builtin.misc.TodoWriteTool;
+import io.leavesfly.jharness.tools.builtin.misc.ConfigTool;
+import io.leavesfly.jharness.tools.builtin.misc.BriefTool;
+import io.leavesfly.jharness.tools.builtin.file.FileWriteTool;
+import io.leavesfly.jharness.tools.builtin.file.FileReadTool;
+import io.leavesfly.jharness.tools.builtin.agent.SendMessageTool;
+import io.leavesfly.jharness.tools.builtin.agent.AskUserQuestionTool;
+import io.leavesfly.jharness.tools.builtin.agent.AgentTool;
 
 import io.leavesfly.jharness.capability.coordination.TeamRegistry;
 import io.leavesfly.jharness.command.commands.CommandRegistry;
@@ -16,7 +27,16 @@ import io.leavesfly.jharness.capability.task.TaskRecord;
 import io.leavesfly.jharness.capability.task.TaskRecord.TaskType;
 import io.leavesfly.jharness.capability.task.TaskStatus;
 import io.leavesfly.jharness.tools.*;
-import io.leavesfly.jharness.tools.input.*;
+import io.leavesfly.jharness.tools.input.file.*;
+import io.leavesfly.jharness.tools.input.shell.*;
+import io.leavesfly.jharness.tools.input.web.*;
+import io.leavesfly.jharness.tools.input.code.*;
+import io.leavesfly.jharness.tools.input.task.*;
+import io.leavesfly.jharness.tools.input.cron.*;
+import io.leavesfly.jharness.tools.input.agent.*;
+import io.leavesfly.jharness.tools.input.mcp.*;
+import io.leavesfly.jharness.tools.input.mode.*;
+import io.leavesfly.jharness.tools.input.misc.*;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 

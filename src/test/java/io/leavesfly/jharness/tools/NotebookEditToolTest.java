@@ -1,8 +1,9 @@
 package io.leavesfly.jharness.tools;
+import io.leavesfly.jharness.tools.builtin.code.NotebookEditTool;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import io.leavesfly.jharness.tools.input.NotebookEditToolInput;
+import io.leavesfly.jharness.tools.input.code.NotebookEditToolInput;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 

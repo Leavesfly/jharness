@@ -247,7 +247,7 @@ public class TerminalUI {
      */
     private void handlePlanCommand() {
         io.leavesfly.jharness.kernel.plan.ExecutionPlan plan =
-                io.leavesfly.jharness.tools.EnterPlanModeTool.getActivePlan();
+                io.leavesfly.jharness.tools.builtin.mode.EnterPlanModeTool.getActivePlan();
         if (plan == null) {
             addSystemMessage("当前不在 Plan Mode 中。使用 enter_plan_mode 工具进入。");
             return;
@@ -264,7 +264,7 @@ public class TerminalUI {
      */
     private void handleApproveCommand(String args) {
         io.leavesfly.jharness.kernel.plan.ExecutionPlan plan =
-                io.leavesfly.jharness.tools.EnterPlanModeTool.getActivePlan();
+                io.leavesfly.jharness.tools.builtin.mode.EnterPlanModeTool.getActivePlan();
         if (plan == null) {
             addSystemMessage("当前不在 Plan Mode 中。");
             return;
@@ -291,7 +291,7 @@ public class TerminalUI {
      */
     private void handleApproveAllCommand() {
         io.leavesfly.jharness.kernel.plan.ExecutionPlan plan =
-                io.leavesfly.jharness.tools.EnterPlanModeTool.getActivePlan();
+                io.leavesfly.jharness.tools.builtin.mode.EnterPlanModeTool.getActivePlan();
         if (plan == null) {
             addSystemMessage("当前不在 Plan Mode 中。");
             return;

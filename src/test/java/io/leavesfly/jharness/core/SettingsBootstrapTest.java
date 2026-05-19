@@ -1,4 +1,5 @@
 package io.leavesfly.jharness.core;
+import io.leavesfly.jharness.config.SettingsBootstrap;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;

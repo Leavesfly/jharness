@@ -1,6 +1,7 @@
 package io.leavesfly.jharness.tools;
+import io.leavesfly.jharness.tools.builtin.shell.BashTool;
 
-import io.leavesfly.jharness.tools.input.BashToolInput;
+import io.leavesfly.jharness.tools.input.shell.BashToolInput;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.DisabledOnOs;
 import org.junit.jupiter.api.condition.OS;

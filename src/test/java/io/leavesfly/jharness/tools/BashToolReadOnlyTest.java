@@ -1,6 +1,8 @@
 package io.leavesfly.jharness.tools;
+import io.leavesfly.jharness.capability.permission.PermissionChecker;
+import io.leavesfly.jharness.tools.builtin.shell.BashTool;
 
-import io.leavesfly.jharness.tools.input.BashToolInput;
+import io.leavesfly.jharness.tools.input.shell.BashToolInput;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;

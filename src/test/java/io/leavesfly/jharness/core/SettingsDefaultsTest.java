@@ -1,4 +1,5 @@
 package io.leavesfly.jharness.core;
+import io.leavesfly.jharness.config.Settings;
 
 import org.junit.jupiter.api.Test;
 

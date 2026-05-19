@@ -1,6 +1,7 @@
 package io.leavesfly.jharness.tools;
+import io.leavesfly.jharness.tools.builtin.code.LspTool;
 
-import io.leavesfly.jharness.tools.input.LspToolInput;
+import io.leavesfly.jharness.tools.input.code.LspToolInput;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 

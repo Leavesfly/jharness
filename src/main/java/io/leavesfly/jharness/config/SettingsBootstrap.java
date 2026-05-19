@@ -125,7 +125,7 @@ public final class SettingsBootstrap {
      * 列出 classpath 下 {@code defaults/plugins} 的一级子目录名。
      * 兼容 {@code file:} 与 {@code jar:} 协议两种 classpath 形态。
      */
-    static List<String> listDefaultPluginNames() {
+    public static List<String> listDefaultPluginNames() {
         List<String> names = new ArrayList<>();
         ClassLoader cl = Thread.currentThread().getContextClassLoader();
         if (cl == null) cl = SettingsBootstrap.class.getClassLoader();

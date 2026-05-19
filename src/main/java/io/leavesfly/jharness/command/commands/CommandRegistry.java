@@ -1,6 +1,10 @@
 package io.leavesfly.jharness.command.commands;
 
-import io.leavesfly.jharness.command.commands.handlers.*;
+import io.leavesfly.jharness.command.commands.builtin.system.*;
+import io.leavesfly.jharness.command.commands.builtin.config.*;
+import io.leavesfly.jharness.command.commands.builtin.session.*;
+import io.leavesfly.jharness.command.commands.builtin.git.*;
+import io.leavesfly.jharness.command.commands.builtin.agent.*;
 
 import io.leavesfly.jharness.config.Settings;
 import io.leavesfly.jharness.capability.coordination.AgentOrchestrator;

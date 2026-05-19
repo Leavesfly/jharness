@@ -26,7 +26,7 @@ import io.leavesfly.jharness.extension.skills.SkillRegistry;
 import io.leavesfly.jharness.capability.task.BackgroundTaskManager;
 import io.leavesfly.jharness.capability.session.SessionSnapshot;
 import io.leavesfly.jharness.capability.session.SessionStorage;
-import io.leavesfly.jharness.tools.AgentTool;
+import io.leavesfly.jharness.tools.builtin.agent.AgentTool;
 import io.leavesfly.jharness.tools.BaseTool;
 import io.leavesfly.jharness.tools.ToolRegistry;
 import io.leavesfly.jharness.command.commands.CommandRegistry;

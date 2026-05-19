@@ -1,10 +1,22 @@
 package io.leavesfly.jharness.commands;
+import io.leavesfly.jharness.command.commands.builtin.git.IssueCommandHandler;
+import io.leavesfly.jharness.command.commands.builtin.git.PrCommentsCommandHandler;
+import io.leavesfly.jharness.command.commands.builtin.session.BridgeCommandHandler;
+import io.leavesfly.jharness.command.commands.builtin.system.ReleaseNotesCommandHandler;
+import io.leavesfly.jharness.command.commands.builtin.system.UpgradeCommandHandler;
+import io.leavesfly.jharness.command.commands.builtin.config.RateLimitCommandHandler;
+import io.leavesfly.jharness.command.commands.builtin.config.PrivacyCommandHandler;
+import io.leavesfly.jharness.command.commands.builtin.config.KeybindingsCommandHandler;
 
 import io.leavesfly.jharness.command.commands.CommandContext;
 import io.leavesfly.jharness.command.commands.CommandRegistry;
 import io.leavesfly.jharness.command.commands.CommandResult;
 import io.leavesfly.jharness.command.commands.SlashCommand;
-import io.leavesfly.jharness.command.commands.handlers.*;
+import io.leavesfly.jharness.command.commands.builtin.system.*;
+import io.leavesfly.jharness.command.commands.builtin.config.*;
+import io.leavesfly.jharness.command.commands.builtin.session.*;
+import io.leavesfly.jharness.command.commands.builtin.git.*;
+import io.leavesfly.jharness.command.commands.builtin.agent.*;
 import io.leavesfly.jharness.config.Settings;
 import io.leavesfly.jharness.kernel.engine.stream.StreamEvent;
 import org.junit.jupiter.api.Test;
